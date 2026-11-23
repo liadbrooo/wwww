@@ -226,76 +226,12 @@ struct Inspector: View {
                 Picker("",selection:$tab) {ForEach(tabs,id:\.self){Text($0).tag($0)}}.pickerStyle(.segmented)
                 ScrollView {
                     VStack(alignment:.leading,spacing:12) {
-                        if tab == "Video" {
-                            heading("Clip")
-                            if c.kind == .video {
-                                Button {e.analyzeCuts(c)} label:{Label(e.analyzing ? "Analysiere…" : "Schnittvorschläge",systemImage:"wand.and.stars")}.disabled(e.analyzing)
-                                if let times=e.suggestions[c.id] {
-                                    if times.isEmpty {Text("Keine deutlichen Szenenwechsel erkannt.").font(.caption).foregroundStyle(.secondary)}
-                                    ForEach(times,id:\.self){t in
-                                        HStack {
-                                            Button(stamp(t)){e.seek(c.start+t)}.buttonStyle(.plain)
-                                            Spacer()
-                                            Button("Teilen"){e.seek(c.start+t);e.selected=c.id;e.split()}.buttonStyle(.bordered)
-                                        }.font(.caption)
-                                    }
-                                }
-                            }
-                            if c.kind == .title {
-                                TextField("Titeltext",text:bind(\.title,c))
-                                control("Schriftgröße",\.fontSize,c,20...200,1)
-                            }
-                            if let m=e.project.asset(c) {
-                                let maxIn=max(0.01,m.duration-c.length*c.speed)
-                                control("Quellstart (s)",\.sourceIn,c,0...maxIn)
-                                let maxLength=max(0.05,(m.duration-c.sourceIn)/c.speed)
-                                control("Dauer (s)",\.length,c,0.04...maxLength)
-                                VStack(alignment:.leading) {
-                                    Text("Geschwindigkeit").font(.caption)
-                                    Picker("",selection:Binding(get:{c.speed},set:{v in e.edit(c.id){$0.length=$0.length*$0.speed/v;$0.speed=v}})) {
-                                        ForEach([0.25,0.5,0.75,1.0,1.25,1.5,2.0,3.0,4.0],id:\.self){Text(String(format:"%g×",$0)).tag($0)}
-                                    }.labelsHidden()
-                                }
-                            } else {control("Dauer (s)",\.length,c,0.1...60)}
-                            heading("Transformation")
-                            Toggle("Bild füllend",isOn:Binding(get:{c.fill ?? false},set:{v in e.edit(c.id){$0.fill=v}}))
-                            control("Skalierung",\.scale,c,0.1...4)
-                            control("Horizontal",\.x,c,-1...1)
-                            control("Vertikal",\.y,c,-1...1)
-                            control("Drehung",\.rotation,c,-180...180,1)
-                            control("Deckkraft",\.opacity,c,0...1)
-                            Button("Transformation zurücksetzen") {e.edit(c.id){$0.scale=1;$0.x=0;$0.y=0;$0.rotation=0;$0.opacity=1}}
-                        } else if tab == "Farbe" {
-                            heading("Looks")
-                            Picker("Filter",selection:bind(\.look,c)) {ForEach(Look.allCases,id:\.self){Text($0.rawValue.capitalized).tag($0)}}
-                            heading("Korrektur")
-                            control("Helligkeit",\.brightness,c,-0.5...0.5)
-                            control("Kontrast",\.contrast,c,0.2...3)
-                            control("Sättigung",\.saturation,c,0...2)
-                            Button("Farben zurücksetzen"){e.edit(c.id){$0.look = .original;$0.brightness=0;$0.contrast=1;$0.saturation=1}}
-                        } else if tab == "Motion" {
-                            heading("Animation")
-                            Picker("Bewegung",selection:bind(\.motion,c)) {ForEach(Motion.allCases,id:\.self){Text($0.rawValue).tag($0)}}
-                            control("Einblenden (s)",\.fadeIn,c,0...max(0.01,c.length/2))
-                            control("Ausblenden (s)",\.fadeOut,c,0...max(0.01,c.length/2))
-                            KeyframeEditor(e:e,c:c)
-                            Text("Überlappe Clips auf V1 und V2 und blende V2 ein, um eine Überblendung zu erzeugen.").font(.caption).foregroundStyle(.secondary)
-                        } else if tab == "FX" {
-                            heading("Videoeffekt")
-                            Picker("Effekt",selection:Binding(get:{c.effect ?? .none},set:{v in e.edit(c.id){$0.effect=v}})) {
-                                ForEach(Effect.allCases,id:\.self){Text($0.rawValue.capitalized).tag($0)}
-                            }
-                            Slider(value:Binding(get:{c.intensity ?? 0.5},set:{v in e.edit(c.id){$0.intensity=v}}),in:0...1)
-                            heading("Maske")
-                            Picker("Form",selection:Binding(get:{c.mask ?? .none},set:{v in e.edit(c.id){$0.mask=v}})){
-                                ForEach(Mask.allCases,id:\.self){Text($0.rawValue.capitalized).tag($0)}
-                            }
-                            Slider(value:Binding(get:{c.maskSize ?? 0.8},set:{v in e.edit(c.id){$0.maskSize=v}}),in:0.05...1)
-                        } else {
-                            heading("Lautstärke")
-                            control("Pegel",\.volume,c,0...1)
-                            Button("Stummschalten"){e.edit(c.id){$0.volume=0}}
-                            Button("Originalpegel"){e.edit(c.id){$0.volume=1}}
+                        switch tab {
+                        case "Video": videoControls(c)
+                        case "Farbe": colorControls(c)
+                        case "Motion": motionControls(c)
+                        case "FX": effectControls(c)
+                        default: audioControls(c)
                         }
                     }.padding(.trailing,5)
                 }
@@ -313,6 +249,81 @@ struct Inspector: View {
                 }
             }
         }.padding(13).background(panel)
+    }
+    @ViewBuilder func videoControls(_ c:Clip) -> some View {
+        heading("Clip")
+        if c.kind == .video {
+            Button {e.analyzeCuts(c)} label:{Label(e.analyzing ? "Analysiere…" : "Schnittvorschläge",systemImage:"wand.and.stars")}.disabled(e.analyzing)
+            if let times=e.suggestions[c.id] {
+                if times.isEmpty {Text("Keine deutlichen Szenenwechsel erkannt.").font(.caption).foregroundStyle(.secondary)}
+                ForEach(times,id:\.self){t in
+                    HStack {
+                        Button(stamp(t)){e.seek(c.start+t)}.buttonStyle(.plain)
+                        Spacer()
+                        Button("Teilen"){e.seek(c.start+t);e.selected=c.id;e.split()}.buttonStyle(.bordered)
+                    }.font(.caption)
+                }
+            }
+        }
+        if c.kind == .title {
+            TextField("Titeltext",text:bind(\.title,c))
+            control("Schriftgröße",\.fontSize,c,20...200,1)
+        }
+        if let m=e.project.asset(c) {
+            let maxIn=max(0.01,m.duration-c.length*c.speed)
+            control("Quellstart (s)",\.sourceIn,c,0...maxIn)
+            let maxLength=max(0.05,(m.duration-c.sourceIn)/c.speed)
+            control("Dauer (s)",\.length,c,0.04...maxLength)
+            VStack(alignment:.leading) {
+                Text("Geschwindigkeit").font(.caption)
+                Picker("",selection:Binding(get:{c.speed},set:{v in e.edit(c.id){$0.length=$0.length*$0.speed/v;$0.speed=v}})) {
+                    ForEach([0.25,0.5,0.75,1.0,1.25,1.5,2.0,3.0,4.0],id:\.self){Text(String(format:"%g×",$0)).tag($0)}
+                }.labelsHidden()
+            }
+        } else {control("Dauer (s)",\.length,c,0.1...60)}
+        heading("Transformation")
+        Toggle("Bild füllend",isOn:Binding(get:{c.fill ?? false},set:{v in e.edit(c.id){$0.fill=v}}))
+        control("Skalierung",\.scale,c,0.1...4)
+        control("Horizontal",\.x,c,-1...1)
+        control("Vertikal",\.y,c,-1...1)
+        control("Drehung",\.rotation,c,-180...180,1)
+        control("Deckkraft",\.opacity,c,0...1)
+        Button("Transformation zurücksetzen") {e.edit(c.id){$0.scale=1;$0.x=0;$0.y=0;$0.rotation=0;$0.opacity=1}}
+    }
+    @ViewBuilder func colorControls(_ c:Clip) -> some View {
+        heading("Looks")
+        Picker("Filter",selection:bind(\.look,c)) {ForEach(Look.allCases,id:\.self){Text($0.rawValue.capitalized).tag($0)}}
+        heading("Korrektur")
+        control("Helligkeit",\.brightness,c,-0.5...0.5)
+        control("Kontrast",\.contrast,c,0.2...3)
+        control("Sättigung",\.saturation,c,0...2)
+        Button("Farben zurücksetzen"){e.edit(c.id){$0.look = .original;$0.brightness=0;$0.contrast=1;$0.saturation=1}}
+    }
+    @ViewBuilder func motionControls(_ c:Clip) -> some View {
+        heading("Animation")
+        Picker("Bewegung",selection:bind(\.motion,c)) {ForEach(Motion.allCases,id:\.self){Text($0.rawValue).tag($0)}}
+        control("Einblenden (s)",\.fadeIn,c,0...max(0.01,c.length/2))
+        control("Ausblenden (s)",\.fadeOut,c,0...max(0.01,c.length/2))
+        KeyframeEditor(e:e,c:c)
+        Text("Überlappe Clips auf V1 und V2 und blende V2 ein, um eine Überblendung zu erzeugen.").font(.caption).foregroundStyle(.secondary)
+    }
+    @ViewBuilder func effectControls(_ c:Clip) -> some View {
+        heading("Videoeffekt")
+        Picker("Effekt",selection:Binding<Effect>(get:{c.effect ?? Effect.none},set:{v in e.edit(c.id){$0.effect=v}})) {
+            ForEach(Effect.allCases,id:\.self){Text($0.rawValue.capitalized).tag($0)}
+        }
+        Slider(value:Binding(get:{c.intensity ?? 0.5},set:{v in e.edit(c.id){$0.intensity=v}}),in:0...1)
+        heading("Maske")
+        Picker("Form",selection:Binding<Mask>(get:{c.mask ?? Mask.none},set:{v in e.edit(c.id){$0.mask=v}})){
+            ForEach(Mask.allCases,id:\.self){Text($0.rawValue.capitalized).tag($0)}
+        }
+        Slider(value:Binding(get:{c.maskSize ?? 0.8},set:{v in e.edit(c.id){$0.maskSize=v}}),in:0.05...1)
+    }
+    @ViewBuilder func audioControls(_ c:Clip) -> some View {
+        heading("Lautstärke")
+        control("Pegel",\.volume,c,0...1)
+        Button("Stummschalten"){e.edit(c.id){$0.volume=0}}
+        Button("Originalpegel"){e.edit(c.id){$0.volume=1}}
     }
 }
 struct Timeline: View {
