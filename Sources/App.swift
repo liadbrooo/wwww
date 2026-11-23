@@ -92,7 +92,7 @@ struct Workspace: View {
                 Text(e.status).lineLimit(1)
                 Spacer()
                 Text("LOKAL  ·  " + e.project.canvas.rawValue + "  ·  " + String(e.project.fps) + " FPS")
-                Text("v0.1.0").foregroundStyle(.tertiary)
+                Text("v0.2.0").foregroundStyle(.tertiary)
             }.font(.system(size:11,weight:.medium)).foregroundStyle(.secondary).padding(.horizontal,14).frame(height:27).background(panel)
         }.background(bg)
         .tint(accent)
@@ -128,7 +128,7 @@ struct Workspace: View {
             HStack {
                 Label("Vorschau",systemImage:"play.rectangle").font(.system(size:12,weight:.semibold))
                 Spacer()
-                Picker("Format",selection:Binding(get:{e.project.canvas},set:{v in e.change{$0.canvas=v}})) {
+                Picker("Format",selection:Binding(get:{e.project.canvas},set:{v in e.change{$0.setCanvas(v)}})) {
                     ForEach(Canvas.allCases,id:\.self) {Text($0.rawValue).tag($0)}
                 }.labelsHidden().frame(width:90)
             }.padding(10)
@@ -148,9 +148,9 @@ struct Workspace: View {
                 Text(stamp(e.playhead)).font(.system(size:12,design:.monospaced)).foregroundStyle(accent)
                 Spacer()
                 Tool(symbol:"backward.end.fill",help:"Anfang") {e.seek(0)}
-                Tool(symbol:"backward.frame",help:"Ein Frame zurück") {e.seek(e.playhead-1/Double(e.project.fps))}
+                Tool(symbol:"backward.frame",help:"Ein Frame zurück") {e.seek(e.playhead-1/e.project.frameRate)}
                 Tool(symbol:e.playing ? "pause.fill":"play.fill",help:"Abspielen / Pause") {e.toggle()}
-                Tool(symbol:"forward.frame",help:"Ein Frame vor") {e.seek(e.playhead+1/Double(e.project.fps))}
+                Tool(symbol:"forward.frame",help:"Ein Frame vor") {e.seek(e.playhead+1/e.project.frameRate)}
                 Tool(symbol:"forward.end.fill",help:"Ende") {e.seek(e.project.duration)}
                 Spacer()
                 Text(stamp(e.project.duration)).font(.system(size:12,design:.monospaced)).foregroundStyle(.secondary)
@@ -185,7 +185,7 @@ struct MediaLibrary: View {
                                 }.frame(height:65).clipped().clipShape(RoundedRectangle(cornerRadius:5))
                                 Text(m.name).font(.system(size:11)).lineLimit(1)
                                 Button {e.add(m)} label: {Label("Timeline",systemImage:"plus.circle").font(.system(size:10)).foregroundStyle(accent)}.buttonStyle(.plain)
-                            }.contentShape(Rectangle()).onTapGesture(count:2){e.add(m)}
+                            }.contentShape(Rectangle()).onTapGesture(count:2){e.add(m)}.onDrag{NSItemProvider(object:("lyro-media:"+m.id.uuidString) as NSString)}
                         }
                     }
                 }
@@ -207,7 +207,7 @@ struct MediaLibrary: View {
 struct Inspector: View {
     @ObservedObject var e: Editor
     @State private var tab = "Video"
-    let tabs = ["Video","Farbe","Motion","Audio"]
+    let tabs = ["Video","Farbe","Motion","Audio","FX"]
     func bind<T>(_ key: WritableKeyPath<Clip,T>,_ c: Clip) -> Binding<T> {
         Binding(get:{e.current?[keyPath:key] ?? c[keyPath:key]},set:{v in e.edit(c.id){$0[keyPath:key]=v}})
     }
@@ -245,6 +245,7 @@ struct Inspector: View {
                                 }
                             } else {control("Dauer (s)",\.length,c,0.1...60)}
                             heading("Transformation")
+                            Toggle("Bild füllend",isOn:Binding(get:{c.fill ?? false},set:{v in e.edit(c.id){$0.fill=v}}))
                             control("Skalierung",\.scale,c,0.1...4)
                             control("Horizontal",\.x,c,-1...1)
                             control("Vertikal",\.y,c,-1...1)
@@ -264,7 +265,19 @@ struct Inspector: View {
                             Picker("Bewegung",selection:bind(\.motion,c)) {ForEach(Motion.allCases,id:\.self){Text($0.rawValue).tag($0)}}
                             control("Einblenden (s)",\.fadeIn,c,0...max(0.01,c.length/2))
                             control("Ausblenden (s)",\.fadeOut,c,0...max(0.01,c.length/2))
+                            KeyframeEditor(e:e,c:c)
                             Text("Überlappe Clips auf V1 und V2 und blende V2 ein, um eine Überblendung zu erzeugen.").font(.caption).foregroundStyle(.secondary)
+                        } else if tab == "FX" {
+                            heading("Videoeffekt")
+                            Picker("Effekt",selection:Binding(get:{c.effect ?? .none},set:{v in e.edit(c.id){$0.effect=v}})) {
+                                ForEach(Effect.allCases,id:\.self){Text($0.rawValue.capitalized).tag($0)}
+                            }
+                            Slider(value:Binding(get:{c.intensity ?? 0.5},set:{v in e.edit(c.id){$0.intensity=v}}),in:0...1)
+                            heading("Maske")
+                            Picker("Form",selection:Binding(get:{c.mask ?? .none},set:{v in e.edit(c.id){$0.mask=v}})){
+                                ForEach(Mask.allCases,id:\.self){Text($0.rawValue.capitalized).tag($0)}
+                            }
+                            Slider(value:Binding(get:{c.maskSize ?? 0.8},set:{v in e.edit(c.id){$0.maskSize=v}}),in:0.05...1)
                         } else {
                             heading("Lautstärke")
                             control("Pegel",\.volume,c,0...1)
@@ -276,8 +289,12 @@ struct Inspector: View {
             } else {
                 VStack(alignment:.leading,spacing:12) {
                     Text("Projekteinstellungen").font(.headline)
-                    Picker("Bildformat",selection:Binding(get:{e.project.canvas},set:{v in e.change{$0.canvas=v}})){ForEach(Canvas.allCases,id:\.self){Text($0.rawValue).tag($0)}}
-                    Picker("Bildrate",selection:Binding(get:{e.project.fps},set:{v in e.change{$0.fps=v}})){ForEach([24,25,30,50,60],id:\.self){Text("\($0) fps").tag($0)}}
+                    if e.project.sourceCanvasWidth != nil {Text("Originalformat · "+String(Int(e.project.sourceCanvasWidth ?? 0))+" × "+String(Int(e.project.sourceCanvasHeight ?? 0))).font(.caption).foregroundStyle(.secondary)}
+                    if let rate=e.project.sourceFPS {Text(String(format:"Originalbildrate %.3f FPS",rate)).font(.caption).foregroundStyle(.secondary)}
+                    Toggle("4K / UHD Export",isOn:Binding(get:{e.project.ultraHD ?? false},set:{v in e.change{$0.ultraHD=v}}))
+                    Text("\(Int(e.project.renderSize.width)) × \(Int(e.project.renderSize.height)) px").font(.caption).foregroundStyle(.secondary)
+                    Picker("Bildformat",selection:Binding(get:{e.project.canvas},set:{v in e.change{$0.setCanvas(v)}})){ForEach(Canvas.allCases,id:\.self){Text($0.rawValue).tag($0)}}
+                    Picker("Bildrate",selection:Binding(get:{e.project.fps},set:{v in e.change{$0.setFPS(v)}})){ForEach([24,25,30,50,60],id:\.self){Text("\($0) fps").tag($0)}}
                     Text("Wähle einen Clip aus, um seine Eigenschaften zu bearbeiten.").font(.caption).foregroundStyle(.secondary)
                     Spacer()
                 }
@@ -346,7 +363,7 @@ struct Timeline: View {
                                 }
                             }
                             Rectangle().fill(accent).frame(width:1.5,height:rowHeight*5).offset(x:e.playhead*e.zoom).allowsHitTesting(false)
-                        }.frame(width:width,height:rowHeight*5,alignment:.topLeading)
+                        }.frame(width:width,height:rowHeight*5,alignment:.topLeading).onDrop(of:[UTType.text.identifier],delegate:MediaDrop(e:e,lanes:lanes,rowHeight:rowHeight))
                     }.overlay(alignment:.topLeading){
                         Image(systemName:"triangle.fill").rotationEffect(.degrees(180)).font(.system(size:9)).foregroundStyle(accent).offset(x:e.playhead*e.zoom-4,y:20).allowsHitTesting(false)
                     }
@@ -373,17 +390,27 @@ struct ClipTile: View {
         }.padding(.horizontal,5).frame(width:w,height:rowHeight-7).clipped()
         .background(laneColor(c.lane).opacity(e.selected==c.id ? 0.83:0.49),in:RoundedRectangle(cornerRadius:4))
         .overlay(RoundedRectangle(cornerRadius:4).strokeBorder(e.selected==c.id ? Color.white:laneColor(c.lane),lineWidth:e.selected==c.id ? 1.5:0.7))
-        .offset(x:c.start*e.zoom+drag.width,y:CGFloat(row)*rowHeight+3+drag.height)
         .onTapGesture{e.selected=c.id}
         .gesture(DragGesture(minimumDistance:4).updating($drag){value,state,_ in state=value.translation}.onEnded{value in
             e.selected=c.id
             e.move(c.id,to:c.start+Double(value.translation.width)/e.zoom,lane:max(-2,min(2,c.lane-Int((value.translation.height/rowHeight).rounded()))))
         })
+        .overlay(alignment:.leading) { trimHandle(leading:true) }
+        .overlay(alignment:.trailing) { trimHandle(leading:false) }
+        .offset(x:c.start*e.zoom+drag.width,y:CGFloat(row)*rowHeight+3+drag.height)
         .contextMenu {
             Button("Teilen"){e.selected=c.id;e.split()}
             Button("Duplizieren"){e.selected=c.id;e.duplicate()}
             Button("Löschen"){e.selected=c.id;e.remove()}
             Button("Lücke schließen"){e.selected=c.id;e.remove(ripple:true)}
         }
+    }
+    func trimHandle(leading:Bool)->some View {
+        Rectangle().fill(e.selected==c.id ? Color.white.opacity(0.85):Color.white.opacity(0.18))
+            .frame(width:5,height:rowHeight-12)
+            .contentShape(Rectangle().inset(by:-3))
+            .highPriorityGesture(DragGesture(minimumDistance:2).onEnded{v in
+                e.selected=c.id;e.trim(c,delta:Double(v.translation.width)/e.zoom,leading:leading)
+            })
     }
 }

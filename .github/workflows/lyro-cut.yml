@@ -20,11 +20,15 @@ jobs:
         run: |
           xcrun swiftc -swift-version 5 -parse-as-library Sources/Model.swift Sources/Render.swift Tests/RenderTests.swift -o .build/render-tests
           .build/render-tests
+      - name: Install disk image designer
+        run: brew install create-dmg
       - name: Build and sign universal application
         run: bash scripts/build.sh
       - name: Upload Mac application
         uses: actions/upload-artifact@v4
         with:
-          name: LYRO-Cut-0.1.0-macOS
-          path: dist/LYRO-Cut-0.1.0-macOS.zip
+          name: LYRO-Cut-0.2.0-macOS
+          path: |
+            dist/LYRO-Cut-0.2.0-macOS.zip
+            dist/LYRO-Cut-0.2.0.dmg
           if-no-files-found: error

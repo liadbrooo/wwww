@@ -1,4 +1,4 @@
-# LYRO Cut · 0.1.0
+# LYRO Cut · 0.2.0
 
 Native, local-first macOS video editor. This is an early development version, not a feature-complete Premiere replacement.
 
@@ -17,3 +17,6 @@ GitHub Actions builds and uploads the ZIP on pushes to the lyro-cut branch. The 
 
 ## Limits
 This is the first implementation. Preview/export, codecs, performance and interaction need real-device integration validation. AVFoundation-compatible video/audio only; no arbitrary codec support. No editable keyframe curves, masks, advanced effects, proxy workflow, waveform generation, automatic captions, multicam, 4K output, HDR color management or plugin SDK yet. Fade overlays can create crossfades with overlapping video on separate lanes. No independent audio export. Project files reference original media; do not move the sources.
+
+## 0.2.0
+Source aspect ratio and frame rate, UHD option, drag media into timeline, same-lane clip swapping, trim handles, seven video effects, basic rectangle/ellipse masks, editable keyframe curves (position, scale, rotation, opacity), custom icon and DMG. Existing projects load with optional defaults. Tracking, automatic captions and audio waveform analysis are not part of this revision.

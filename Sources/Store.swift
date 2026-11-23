@@ -81,7 +81,7 @@ import UniformTypeIdentifiers
                 player.replaceCurrentItem(with:nil); playing = false; return
             }
             do {
-                let graph = try await Renderer.build(snapshot)
+                let graph = try await Renderer.build(snapshot,preview:true)
                 guard !Task.isCancelled else { return }
                 let at = min(playhead,max(0,snapshot.duration-0.001))
                 let resume = player.rate != 0
@@ -121,7 +121,15 @@ import UniformTypeIdentifiers
                 let videos = try await asset.loadTracks(withMediaType:.video)
                 let audios = try await asset.loadTracks(withMediaType:.audio)
                 guard duration.isFinite, duration > 0.05, !videos.isEmpty || !audios.isEmpty else { throw RenderError.invalid(url.lastPathComponent) }
-                added.append(Media(path:url.path,name:url.lastPathComponent,duration:duration,kind:videos.isEmpty ? .audio : .video))
+                var media=Media(path:url.path,name:url.lastPathComponent,duration:duration,kind:videos.isEmpty ? .audio : .video)
+                if let track=videos.first {
+                    let size=try await track.load(.naturalSize)
+                    let transform=try await track.load(.preferredTransform)
+                    let oriented=CGRect(origin:.zero,size:size).applying(transform)
+                    media.width=abs(oriented.width);media.height=abs(oriented.height)
+                    media.fps=Double(try await track.load(.nominalFrameRate))
+                }
+                added.append(media)
             } catch { failures.append(url.lastPathComponent) }
         }
         if !added.isEmpty { change { $0.media.append(contentsOf:added) }; await makeThumbnails() }
@@ -140,11 +148,14 @@ import UniformTypeIdentifiers
             await Task.yield()
         }
     }
-    func add(_ media: Media) {
-        let lane = media.kind == .audio ? -1 : 0
-        let start = project.clips.filter{$0.lane == lane}.map(\.end).max() ?? 0
+    func add(_ media: Media, at position: Double? = nil, lane requested: Int? = nil) {
+        let lane = media.kind == .audio ? max(-2,min(-1,requested ?? -1)) : max(0,min(2,requested ?? 0))
+        let start = position.map{max(0,($0*project.frameRate).rounded()/project.frameRate)} ?? project.clips.filter{$0.lane == lane}.map(\.end).max() ?? 0
         let clip = Clip(mediaID:media.id,name:media.name,kind:media.kind,start:start,length:media.duration,lane:lane)
-        change { $0.clips.append(clip) }; selected = clip.id
+        change { p in
+            if media.kind == .video && !p.clips.contains(where:{$0.kind == .video}) {p.useSource(media)}
+            p.clips.append(clip)
+        }; selected = clip.id
     }
     func addTitle() {
         let clip = Clip(name:"Titel",kind:.title,start:playhead,length:3,lane:2)
@@ -175,8 +186,44 @@ import UniformTypeIdentifiers
         var destination = max(0,time)
         let edges: [Double] = project.clips.filter{$0.id != id}.flatMap{ (clip: Clip) -> [Double] in [clip.start,clip.end] } + [playhead,0.0]
         if let edge = edges.min(by:{abs($0-destination)<abs($1-destination)}), abs(edge-destination) < 8/zoom { destination = edge }
-        else { destination = (destination*Double(project.fps)).rounded()/Double(project.fps) }
-        edit(id) { $0.start = destination; $0.lane = c.kind == .audio ? min(-1,lane) : max(0,lane) }
+        else { destination = (destination*project.frameRate).rounded()/Double(project.fps) }
+        let targetLane=c.kind == .audio ? max(-2,min(-1,lane)) : max(0,min(2,lane))
+        let swap=project.clips.first{$0.id != id && $0.lane == targetLane && destination+c.length/2 >= $0.start && destination+c.length/2 < $0.end}
+        change { p in
+            if let i=p.clips.firstIndex(where:{$0.id==id}) {
+                if let other=swap,c.lane==targetLane,let j=p.clips.firstIndex(where:{$0.id==other.id}) {
+                    let left=min(c.start,other.start)
+                    if c.start<other.start {p.clips[j].start=left;p.clips[i].start=left+other.length}
+                    else {p.clips[i].start=left;p.clips[j].start=left+c.length}
+                } else {p.clips[i].start=destination;p.clips[i].lane=targetLane}
+            }
+        }
+    }
+    func trim(_ c: Clip, delta: Double, leading: Bool) {
+        let frame=1/project.frameRate
+        let amount=(delta/frame).rounded()*frame
+        let media=project.asset(c)
+        edit(c.id) { clip in
+            if leading {
+                let lower=max(-c.start,-c.sourceIn/c.speed)
+                let d=max(lower,min(c.length-frame,amount))
+                clip.start=c.start+d;clip.sourceIn=c.sourceIn+d*c.speed;clip.length=c.length-d
+                if let points=c.keyframes {clip.keyframes=points.map{p in var q=p;q.time=max(0,p.time-d);return q}.filter{$0.time<=clip.length}}
+            } else {
+                let limit=media.map{max(frame,($0.duration-c.sourceIn)/c.speed)} ?? 3600
+                clip.length=max(frame,min(limit,c.length+amount))
+                clip.keyframes=clip.keyframes?.filter{$0.time<=clip.length}
+            }
+        }
+    }
+    func addKeyframe(_ c:Clip) {
+        let time=min(c.length,max(0,playhead-c.start))
+        edit(c.id) {clip in
+            var points=clip.keyframes ?? []
+            points.removeAll{abs($0.time-time)<0.5/project.frameRate}
+            points.append(Keyframe(time:time,scale:clip.scale,x:clip.x,y:clip.y,rotation:clip.rotation,opacity:clip.opacity))
+            clip.keyframes=points.sorted{$0.time<$1.time}
+        }
     }
     func newProject() {
         let alert = NSAlert(); alert.messageText = "Neues Projekt?"; alert.informativeText = "Speichere das aktuelle Projekt, falls du es behalten möchtest."; alert.addButton(withTitle:"Neu"); alert.addButton(withTitle:"Abbrechen")
@@ -202,7 +249,7 @@ import UniformTypeIdentifiers
         guard panel.runModal() == .OK,let url = panel.url else { return }
         do {
             let next = try JSONDecoder().decode(Project.self,from:Data(contentsOf:url))
-            guard [24,25,30,50,60].contains(next.fps),
+            guard next.fps >= 10 && next.fps <= 120, next.frameRate >= 10 && next.frameRate <= 120,
                   next.clips.allSatisfy({$0.start.isFinite && $0.start >= 0 && $0.length.isFinite && $0.length > 0 && $0.speed > 0 && $0.sourceIn >= 0 && (-2...2).contains($0.lane)}) else { throw RenderError.invalid("Projektdatei") }
             player.pause(); seek(0); fileURL = url; change { $0 = next }
             Task { await makeThumbnails() }

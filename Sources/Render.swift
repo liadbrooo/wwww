@@ -66,9 +66,36 @@ final class CutCompositor: NSObject, AVVideoCompositing {
                         case .cool: image = image.applyingFilter("CIPhotoEffectTransfer").applyingFilter("CIColorControls",parameters:[kCIInputSaturationKey:0.75])
                         }
                     }
+                    if c.kind != .title {
+                        let amount = min(1,max(0,c.intensity ?? 0.5))
+                        let bounds = image.extent
+                        switch c.effect ?? .none {
+                        case .none: break
+                        case .blur: image=image.clampedToExtent().applyingFilter("CIGaussianBlur",parameters:[kCIInputRadiusKey:amount*30]).cropped(to:bounds)
+                        case .sharpen: image=image.applyingFilter("CISharpenLuminance",parameters:[kCIInputSharpnessKey:amount*2])
+                        case .vignette: image=image.applyingFilter("CIVignette",parameters:[kCIInputIntensityKey:amount*3,kCIInputRadiusKey:1.5])
+                        case .pixelate: image=image.applyingFilter("CIPixellate",parameters:[kCIInputScaleKey:2+amount*60]).cropped(to:bounds)
+                        case .bloom: image=image.clampedToExtent().applyingFilter("CIBloom",parameters:[kCIInputIntensityKey:amount,kCIInputRadiusKey:20]).cropped(to:bounds)
+                        case .edges: image=image.applyingFilter("CIEdges",parameters:[kCIInputIntensityKey:amount*8]).cropped(to:bounds)
+                        case .noir: image=image.applyingFilter("CIPhotoEffectNoir")
+                        }
+                        let maskSize=max(0.05,min(1,c.maskSize ?? 0.8))
+                        if c.mask == .rectangle || c.mask == .ellipse {
+                            let box=bounds.insetBy(dx:bounds.width*(1-maskSize)/2,dy:bounds.height*(1-maskSize)/2)
+                            if let context=CGContext(data:nil,width:Int(bounds.width),height:Int(bounds.height),bitsPerComponent:8,bytesPerRow:0,space:CGColorSpaceCreateDeviceRGB(),bitmapInfo:CGImageAlphaInfo.premultipliedLast.rawValue) {
+                                context.setFillColor(CGColor(gray:1,alpha:1))
+                                if c.mask == .ellipse {context.fillEllipse(in:box)} else {context.fill(box)}
+                                if let cg=context.makeImage() {
+                                    let clear=CIImage(color:CIColor(red:0,green:0,blue:0,alpha:0)).cropped(to:bounds)
+                                    image=image.applyingFilter("CIBlendWithAlphaMask",parameters:[kCIInputBackgroundImageKey:clear,kCIInputMaskImageKey:CIImage(cgImage:cg)]).cropped(to:bounds)
+                                }
+                            }
+                        }
+                    }
+                    let pose=c.pose(at:time-c.start)
                     let p = min(1,max(0,(time-c.start)/max(c.length,0.01)))
-                    var zoom = c.scale
-                    var dx = c.x * size.width
+                    var zoom = pose.scale
+                    var dx = pose.x * size.width
                     switch c.motion {
                     case .none: break
                     case .zoomIn: zoom *= 1 + 0.25*p
@@ -76,12 +103,12 @@ final class CutCompositor: NSObject, AVVideoCompositing {
                     case .slideLeft: dx += (0.5-p)*size.width*0.35
                     case .slideRight: dx += (p-0.5)*size.width*0.35
                     }
-                    let fit = c.kind == .title ? size.width/1920 : min(size.width/extent.width,size.height/extent.height)
+                    let fit = c.kind == .title ? size.width/1920 : (c.fill == true ? max(size.width/extent.width,size.height/extent.height) : min(size.width/extent.width,size.height/extent.height))
                     image = image.transformed(by:CGAffineTransform(translationX:-extent.width/2,y:-extent.height/2))
                     image = image.transformed(by:CGAffineTransform(scaleX:fit*zoom,y:fit*zoom))
-                    image = image.transformed(by:CGAffineTransform(rotationAngle:c.rotation*Double.pi/180))
-                    image = image.transformed(by:CGAffineTransform(translationX:size.width/2+dx,y:size.height/2+c.y*size.height))
-                    var alpha = c.opacity
+                    image = image.transformed(by:CGAffineTransform(rotationAngle:pose.rotation*Double.pi/180))
+                    image = image.transformed(by:CGAffineTransform(translationX:size.width/2+dx,y:size.height/2+pose.y*size.height))
+                    var alpha = pose.opacity
                     if c.fadeIn > 0 { alpha *= min(1,max(0,(time-c.start)/c.fadeIn)) }
                     if c.fadeOut > 0 { alpha *= min(1,max(0,(c.end-time)/c.fadeOut)) }
                     image = image.applyingFilter("CIColorMatrix",parameters:["inputAVector":CIVector(x:0,y:0,z:0,w:alpha)])
@@ -131,7 +158,7 @@ enum Renderer {
         CTLineDraw(line,context)
         return context.makeImage().map { CIImage(cgImage:$0) }
     }
-    static func build(_ project: Project) async throws -> RenderGraph {
+    static func build(_ project: Project, preview: Bool = false) async throws -> RenderGraph {
         let comp = AVMutableComposition()
         var layers: [Layer] = []
         var audioParameters: [AVAudioMixInputParameters] = []
@@ -176,8 +203,9 @@ enum Renderer {
         }
         let video = AVMutableVideoComposition()
         video.customVideoCompositorClass = CutCompositor.self
-        video.renderSize = project.canvas.size
-        video.frameDuration = CMTime(value:1,timescale:CMTimeScale(project.fps))
+        let outputSize=project.renderSize
+        video.renderSize = preview && max(outputSize.width,outputSize.height)>1920 ? CGSize(width:(outputSize.width/4).rounded()*2,height:(outputSize.height/4).rounded()*2) : outputSize
+        video.frameDuration = CMTime(value:1001,timescale:CMTimeScale((project.frameRate*1001).rounded()))
         video.instructions = [CutInstruction(duration:project.duration,layers:layers)]
         let audio = AVMutableAudioMix()
         audio.inputParameters = audioParameters
