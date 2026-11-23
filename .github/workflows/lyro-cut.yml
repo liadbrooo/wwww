@@ -16,6 +16,10 @@ jobs:
           mkdir -p .build
           xcrun swiftc -swift-version 5 -parse-as-library Sources/Model.swift Tests/ModelTests.swift -o .build/model-tests
           .build/model-tests
+      - name: Test real media rendering and MP4 export
+        run: |
+          xcrun swiftc -swift-version 5 -parse-as-library Sources/Model.swift Sources/Render.swift Tests/RenderTests.swift -o .build/render-tests
+          .build/render-tests
       - name: Build and sign universal application
         run: bash scripts/build.sh
       - name: Upload Mac application
