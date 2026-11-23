@@ -86,7 +86,8 @@ import UniformTypeIdentifiers
                 let at = min(playhead,max(0,snapshot.duration-0.001))
                 let resume = player.rate != 0
                 player.replaceCurrentItem(with:graph.playerItem())
-                player.seek(to:ct(at),toleranceBefore:.zero,toleranceAfter:.zero)
+                _ = await player.seek(to:ct(at),toleranceBefore:.zero,toleranceAfter:.zero)
+                guard !Task.isCancelled else { return }
                 if resume { player.play() }
                 status = "Bereit"
             } catch { if !Task.isCancelled { status = error.localizedDescription; player.replaceCurrentItem(with:nil); playing = false } }
@@ -172,7 +173,7 @@ import UniformTypeIdentifiers
     func move(_ id: UUID,to time: Double,lane: Int) {
         guard let c = project.clips.first(where:{$0.id == id}) else { return }
         var destination = max(0,time)
-        let edges = project.clips.filter{$0.id != id}.flatMap{[$0.start,$0.end]} + [playhead,0]
+        let edges: [Double] = project.clips.filter{$0.id != id}.flatMap{ (clip: Clip) -> [Double] in [clip.start,clip.end] } + [playhead,0.0]
         if let edge = edges.min(by:{abs($0-destination)<abs($1-destination)}), abs(edge-destination) < 8/zoom { destination = edge }
         else { destination = (destination*Double(project.fps)).rounded()/Double(project.fps) }
         edit(id) { $0.start = destination; $0.lane = c.kind == .audio ? min(-1,lane) : max(0,lane) }
