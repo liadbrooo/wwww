@@ -221,34 +221,49 @@ struct Inspector: View {
     var body: some View {
         VStack(alignment:.leading,spacing:12) {
             Text("Eigenschaften").font(.system(size:13,weight:.semibold))
-            if let c=e.current {
-                Text(c.name).font(.system(size:12)).lineLimit(1).foregroundStyle(.secondary)
-                Picker("",selection:$tab) {ForEach(tabs,id:\.self){Text($0).tag($0)}}.pickerStyle(.segmented)
-                ScrollView {
-                    VStack(alignment:.leading,spacing:12) {
-                        switch tab {
-                        case "Video": videoControls(c)
-                        case "Farbe": colorControls(c)
-                        case "Motion": motionControls(c)
-                        case "FX": effectControls(c)
-                        default: audioControls(c)
-                        }
-                    }.padding(.trailing,5)
-                }
-            } else {
-                VStack(alignment:.leading,spacing:12) {
-                    Text("Projekteinstellungen").font(.headline)
-                    if e.project.sourceCanvasWidth != nil {Text("Originalformat · "+String(Int(e.project.sourceCanvasWidth ?? 0))+" × "+String(Int(e.project.sourceCanvasHeight ?? 0))).font(.caption).foregroundStyle(.secondary)}
-                    if let rate=e.project.sourceFPS {Text(String(format:"Originalbildrate %.3f FPS",rate)).font(.caption).foregroundStyle(.secondary)}
-                    Toggle("4K / UHD Export",isOn:Binding(get:{e.project.ultraHD ?? false},set:{v in e.change{$0.ultraHD=v}}))
-                    Text("\(Int(e.project.renderSize.width)) × \(Int(e.project.renderSize.height)) px").font(.caption).foregroundStyle(.secondary)
-                    Picker("Bildformat",selection:Binding(get:{e.project.canvas},set:{v in e.change{$0.setCanvas(v)}})){ForEach(Canvas.allCases,id:\.self){Text($0.rawValue).tag($0)}}
-                    Picker("Bildrate",selection:Binding(get:{e.project.fps},set:{v in e.change{$0.setFPS(v)}})){ForEach([24,25,30,50,60],id:\.self){Text("\($0) fps").tag($0)}}
-                    Text("Wähle einen Clip aus, um seine Eigenschaften zu bearbeiten.").font(.caption).foregroundStyle(.secondary)
-                    Spacer()
-                }
-            }
+            panelContent()
         }.padding(13).background(panel)
+    }
+    func panelContent() -> AnyView {
+        if let c=e.current {return AnyView(clipPanel(c))}
+        return AnyView(projectPanel())
+    }
+    func clipPanel(_ c:Clip) -> some View {
+        VStack(alignment:.leading,spacing:12) {
+            Text(c.name).font(.system(size:12)).lineLimit(1).foregroundStyle(.secondary)
+            Picker("",selection:$tab) {ForEach(tabs,id:\.self){Text($0).tag($0)}}.pickerStyle(.segmented)
+            ScrollView {
+                VStack(alignment:.leading,spacing:12) {activeControls(c)}.padding(.trailing,5)
+            }
+        }
+    }
+    func activeControls(_ c:Clip) -> AnyView {
+        switch tab {
+        case "Video":return AnyView(videoControls(c))
+        case "Farbe":return AnyView(colorControls(c))
+        case "Motion":return AnyView(motionControls(c))
+        case "FX":return AnyView(effectControls(c))
+        default:return AnyView(audioControls(c))
+        }
+    }
+    func projectPanel() -> some View {
+        let dimensions = e.project.renderSize
+        let outputLabel = String(format:"%.0f × %.0f px",Double(dimensions.width),Double(dimensions.height))
+        let sourceLabel = String(format:"Originalformat %.0f × %.0f",e.project.sourceCanvasWidth ?? 0,e.project.sourceCanvasHeight ?? 0)
+        let uhd = Binding<Bool>(get:{e.project.ultraHD ?? false},set:{v in e.change{$0.ultraHD=v}})
+        let format = Binding<Canvas>(get:{e.project.canvas},set:{v in e.change{$0.setCanvas(v)}})
+        let fps = Binding<Int>(get:{e.project.fps},set:{v in e.change{$0.setFPS(v)}})
+        return VStack(alignment:.leading,spacing:12) {
+            Text("Projekteinstellungen").font(.headline)
+            if e.project.sourceCanvasWidth != nil {Text(sourceLabel).font(.caption).foregroundStyle(.secondary)}
+            if let rate=e.project.sourceFPS {Text(String(format:"Originalbildrate %.3f FPS",rate)).font(.caption).foregroundStyle(.secondary)}
+            Toggle("4K / UHD Export",isOn:uhd)
+            Text(outputLabel).font(.caption).foregroundStyle(.secondary)
+            Picker("Bildformat",selection:format) {ForEach(Canvas.allCases,id:\.self){Text($0.rawValue).tag($0)}}
+            Picker("Bildrate",selection:fps) {ForEach([24,25,30,50,60],id:\.self){Text("\($0) fps").tag($0)}}
+            Text("Wähle einen Clip aus, um seine Eigenschaften zu bearbeiten.").font(.caption).foregroundStyle(.secondary)
+            Spacer()
+        }
     }
     @ViewBuilder func videoControls(_ c:Clip) -> some View {
         heading("Clip")
@@ -281,6 +296,9 @@ struct Inspector: View {
                 }.labelsHidden()
             }
         } else {control("Dauer (s)",\.length,c,0.1...60)}
+        transformControls(c)
+    }
+    @ViewBuilder func transformControls(_ c:Clip) -> some View {
         heading("Transformation")
         Toggle("Bild füllend",isOn:Binding(get:{c.fill ?? false},set:{v in e.edit(c.id){$0.fill=v}}))
         control("Skalierung",\.scale,c,0.1...4)
