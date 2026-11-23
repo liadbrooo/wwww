@@ -228,6 +228,19 @@ struct Inspector: View {
                     VStack(alignment:.leading,spacing:12) {
                         if tab == "Video" {
                             heading("Clip")
+                            if c.kind == .video {
+                                Button {e.analyzeCuts(c)} label:{Label(e.analyzing ? "Analysiere…" : "Schnittvorschläge",systemImage:"wand.and.stars")}.disabled(e.analyzing)
+                                if let times=e.suggestions[c.id] {
+                                    if times.isEmpty {Text("Keine deutlichen Szenenwechsel erkannt.").font(.caption).foregroundStyle(.secondary)}
+                                    ForEach(times,id:\.self){t in
+                                        HStack {
+                                            Button(stamp(t)){e.seek(c.start+t)}.buttonStyle(.plain)
+                                            Spacer()
+                                            Button("Teilen"){e.seek(c.start+t);e.selected=c.id;e.split()}.buttonStyle(.bordered)
+                                        }.font(.caption)
+                                    }
+                                }
+                            }
                             if c.kind == .title {
                                 TextField("Titeltext",text:bind(\.title,c))
                                 control("Schriftgröße",\.fontSize,c,20...200,1)
@@ -389,6 +402,12 @@ struct ClipTile: View {
             Spacer(minLength:0)
         }.padding(.horizontal,5).frame(width:w,height:rowHeight-7).clipped()
         .background(laneColor(c.lane).opacity(e.selected==c.id ? 0.83:0.49),in:RoundedRectangle(cornerRadius:4))
+        .overlay(alignment:.bottom) {
+            if let id=c.mediaID,let peaks=e.waveforms[id],!peaks.isEmpty {
+                WaveformStrip(peaks:peaks,sourceIn:c.sourceIn,sourceLength:c.length*c.speed,mediaDuration:e.project.asset(c)?.duration ?? c.length)
+                    .frame(height:c.kind == .audio ? rowHeight-10 : 12).padding(.horizontal,4).allowsHitTesting(false)
+            }
+        }
         .overlay(RoundedRectangle(cornerRadius:4).strokeBorder(e.selected==c.id ? Color.white:laneColor(c.lane),lineWidth:e.selected==c.id ? 1.5:0.7))
         .onTapGesture{e.selected=c.id}
         .gesture(DragGesture(minimumDistance:4).updating($drag){value,state,_ in state=value.translation}.onEnded{value in

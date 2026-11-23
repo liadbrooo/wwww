@@ -20,3 +20,5 @@ This is the first implementation. Preview/export, codecs, performance and intera
 
 ## 0.2.0
 Source aspect ratio and frame rate, UHD option, drag media into timeline, same-lane clip swapping, trim handles, seven video effects, basic rectangle/ellipse masks, editable keyframe curves (position, scale, rotation, opacity), custom icon and DMG. Existing projects load with optional defaults. Tracking, automatic captions and audio waveform analysis are not part of this revision.
+
+Waveforms are calculated from decoded audio locally; scene suggestions use sampled frame differences and can miss cuts. UHD resolution and fractional source frame rates are covered by model tests; the end-to-end MP4 test still exports HD.

@@ -13,6 +13,10 @@ import UniformTypeIdentifiers
     @Published var busy = false
     @Published var status = "Bereit"
     @Published var zoom: Double = 48
+    @Published var waveforms: [UUID:[Double]] = [:]
+    @Published var suggestions: [UUID:[Double]] = [:]
+    @Published var analyzing = false
+    private var waveformPending: Set<UUID> = []
     @Published var thumbnails: [UUID:NSImage] = [:]
     @Published private(set) var canUndo = false
     @Published private(set) var canRedo = false
@@ -137,6 +141,16 @@ import UniformTypeIdentifiers
         if !failures.isEmpty { error = "Nicht unterstützte Medien: " + failures.joined(separator:", ") }
     }
     func makeThumbnails() async {
+        for media in project.media where waveforms[media.id] == nil && !waveformPending.contains(media.id) {
+            waveformPending.insert(media.id)
+            let id=media.id
+            let path=media.path
+            let duration=media.duration
+            Task {
+                let peaks=await Task.detached(priority:.utility){await MediaAnalysis.waveform(path:path,duration:duration)}.value
+                waveforms[id]=peaks;waveformPending.remove(id)
+            }
+        }
         for media in project.media where media.kind == .video && thumbnails[media.id] == nil {
             let asset = AVURLAsset(url:URL(fileURLWithPath:media.path))
             let generator = AVAssetImageGenerator(asset:asset)
@@ -223,6 +237,18 @@ import UniformTypeIdentifiers
             points.removeAll{abs($0.time-time)<0.5/project.frameRate}
             points.append(Keyframe(time:time,scale:clip.scale,x:clip.x,y:clip.y,rotation:clip.rotation,opacity:clip.opacity))
             clip.keyframes=points.sorted{$0.time<$1.time}
+        }
+    }
+    func analyzeCuts(_ c:Clip) {
+        guard !analyzing,let m=project.asset(c),c.kind == .video else {return}
+        analyzing=true
+        let path=m.path
+        let start=c.sourceIn
+        let length=c.length*c.speed
+        Task {
+            let times=await Task.detached(priority:.userInitiated){await MediaAnalysis.scenes(path:path,start:start,length:length)}.value
+            suggestions[c.id]=times.map{($0-start)/c.speed}
+            analyzing=false
         }
     }
     func newProject() {

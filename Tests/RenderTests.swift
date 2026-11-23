@@ -79,6 +79,12 @@ import AppKit
             if t<1 { guard Int(rgba[0])>Int(rgba[2])+20 else {throw RenderError.invalid("source color")} }
             else {guard abs(Int(rgba[0])-Int(rgba[2]))<20 else {throw RenderError.invalid("monochrome effect")} }
         }
+        p.canvas = .portrait
+        p.fps = 25
+        p.ultraHD = true
+        let portrait=try await Renderer.build(p)
+        guard portrait.video.renderSize==CGSize(width:2160,height:3840),
+              abs(portrait.video.frameDuration.seconds-0.04)<0.000001 else {throw RenderError.invalid("UHD format / fps")}
         print("Real AVFoundation import, composition, title, motion, color effect and MP4 export passed")
     }
 }
