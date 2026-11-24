@@ -18,15 +18,15 @@ done
 iconutil -c icns .build/brand/AppIcon.iconset -o "dist/LYRO Cut.app/Contents/Resources/AppIcon.icns"
 codesign --force --sign - "dist/LYRO Cut.app"
 codesign --verify --deep --strict "dist/LYRO Cut.app"
-ditto -c -k --sequesterRsrc --keepParent "dist/LYRO Cut.app" "dist/LYRO-Cut-0.5.0-macOS.zip"
+ditto -c -k --sequesterRsrc --keepParent "dist/LYRO Cut.app" "dist/LYRO-Cut-0.5.1-macOS.zip"
 
 if command -v create-dmg >/dev/null; then
   mkdir -p .build/dmg
   ditto "dist/LYRO Cut.app" ".build/dmg/LYRO Cut.app"
-  create-dmg --volname "LYRO Cut" --background .build/brand/background.png --window-pos 200 120 --window-size 760 440 --icon-size 112 --icon "LYRO Cut.app" 385 200 --app-drop-link 630 200 --hide-extension "LYRO Cut.app" --no-internet-enable "dist/LYRO-Cut-0.5.0.dmg" .build/dmg
+  create-dmg --volname "LYRO Cut" --background .build/brand/background.png --window-pos 200 120 --window-size 760 440 --icon-size 112 --icon "LYRO Cut.app" 385 200 --app-drop-link 630 200 --hide-extension "LYRO Cut.app" --no-internet-enable "dist/LYRO-Cut-0.5.1.dmg" .build/dmg
 else
   mkdir -p .build/dmg
   ditto "dist/LYRO Cut.app" ".build/dmg/LYRO Cut.app"
   ln -sf /Applications .build/dmg/Applications
-  hdiutil create -volname "LYRO Cut" -srcfolder .build/dmg -format UDZO -ov "dist/LYRO-Cut-0.5.0.dmg"
+  hdiutil create -volname "LYRO Cut" -srcfolder .build/dmg -format UDZO -ov "dist/LYRO-Cut-0.5.1.dmg"
 fi

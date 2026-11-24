@@ -284,3 +284,26 @@ struct Project: Codable, Equatable {
         return right.id
     }
 }
+
+struct StudioPreferences: Codable, Equatable {
+    var canvas:Canvas = .landscape
+    var fps=30
+    var matchSource=true
+    var snapping=true
+    var swapping=true
+    var snapDistance=8.0
+    var undoLimit=80
+    var trackHeight=47.0
+    var showWaveforms=true
+    var showThumbnails=true
+    var previewLimit=1920
+    var recoveryEnabled=true
+    var restoreLast=true
+    var exportFormat="mp4"
+    var exportResolution="project"
+    var exportFPS=0
+    var revealExport=true
+    func newProject()->Project {
+        var p=Project();p.canvas=canvas;p.fps=fps;return p
+    }
+}

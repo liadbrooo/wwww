@@ -45,6 +45,7 @@ func laneColor(_ lane: Int) -> Color { lane < 0 ? Color(red:0.22,green:0.66,blue
                 Button("Titel hinzufügen") { editor.addTitle() }.keyboardShortcut("t")
             }
         }
+        Settings {StudioSettings(e:editor).preferredColorScheme(.dark)}
     }
 }
 struct PlayerSurface: NSViewRepresentable {
@@ -103,7 +104,7 @@ struct Workspace: View {
                 }
                 Spacer()
                 Text("LOKAL  ·  " + e.project.canvas.rawValue + "  ·  " + String(e.project.fps) + " FPS")
-                Text("v0.5.0").foregroundStyle(.tertiary)
+                Text("v0.5.1").foregroundStyle(.tertiary)
             }.font(.system(size:11,weight:.medium)).foregroundStyle(.secondary).padding(.horizontal,14).frame(height:27).background(panel)
         }.background(bg)
         .tint(accent)
@@ -126,6 +127,7 @@ struct Workspace: View {
             Text(e.project.name).font(.system(size:13,weight:.semibold)).lineLimit(1)
             Spacer()
             Tool(symbol:"sidebar.right",help:"Eigenschaften ein-/ausblenden") {inspector.toggle()}
+            SettingsLink {Image(systemName:"gearshape").font(.system(size:15)).frame(width:30,height:30)}.buttonStyle(.plain).help("Einstellungen (⌘, )")
             Button {e.export()} label: {
                 HStack(spacing:7) {
                     if e.busy {ProgressView().controlSize(.small)}
@@ -381,7 +383,7 @@ struct Inspector: View {
 struct Timeline: View {
     @ObservedObject var e: Editor
     var lanes:[Int]{e.project.lanes}
-    let rowHeight: CGFloat = 47
+    var rowHeight: CGFloat {CGFloat(e.prefs.trackHeight)}
     var width: CGFloat {max(600,(e.project.duration+6)*e.zoom)}
     var body: some View {
         VStack(spacing:0) {
@@ -465,7 +467,7 @@ struct ClipTile: View {
     var body: some View {
         let w = max(8,c.length*e.zoom)
         HStack(spacing:5) {
-            if c.kind == .video,let id=c.mediaID,let thumb=e.thumbnails[id],w>55 {
+            if e.prefs.showThumbnails,c.kind == .video,let id=c.mediaID,let thumb=e.thumbnails[id],w>55 {
                 Image(nsImage:thumb).resizable().aspectRatio(contentMode:.fill).frame(width:42,height:32).clipped()
             } else if w>25 {Image(systemName:c.kind == .title ? "textformat":c.kind == .audio ? "waveform":"film").font(.caption)}
             if w>38 {Text(c.kind == .title ? c.title:c.name).font(.system(size:10,weight:.semibold)).lineLimit(1)}
@@ -473,7 +475,7 @@ struct ClipTile: View {
         }.padding(.horizontal,5).frame(width:w,height:rowHeight-7).clipped()
         .background(laneColor(c.lane).opacity(e.selection.contains(c.id) ? 0.83:0.49),in:RoundedRectangle(cornerRadius:4))
         .overlay(alignment:.bottom) {
-            if let id=c.mediaID,let peaks=e.waveforms[id],!peaks.isEmpty {
+            if e.prefs.showWaveforms,let id=c.mediaID,let peaks=e.waveforms[id],!peaks.isEmpty {
                 WaveformStrip(peaks:peaks,sourceIn:c.sourceIn,sourceLength:c.length*c.speed,mediaDuration:e.project.asset(c)?.duration ?? c.length)
                     .frame(height:c.kind == .audio ? rowHeight-10 : 12).padding(.horizontal,4).allowsHitTesting(false)
             }

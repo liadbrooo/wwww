@@ -163,7 +163,7 @@ enum Renderer {
         CTLineDraw(line,context)
         return context.makeImage().map { CIImage(cgImage:$0) }
     }
-    static func build(_ project: Project, preview: Bool = false) async throws -> RenderGraph {
+    static func build(_ project: Project, preview: Bool = false, previewLimit:Int = 1920) async throws -> RenderGraph {
         let comp = AVMutableComposition()
         var layers: [Layer] = []
         var audioParameters: [AVAudioMixInputParameters] = []
@@ -215,7 +215,8 @@ enum Renderer {
         let video = AVMutableVideoComposition()
         video.customVideoCompositorClass = CutCompositor.self
         let outputSize=project.renderSize
-        video.renderSize = preview && max(outputSize.width,outputSize.height)>1920 ? CGSize(width:(outputSize.width/4).rounded()*2,height:(outputSize.height/4).rounded()*2) : outputSize
+        let scale = preview && previewLimit>0 ? min(1,Double(previewLimit)/max(outputSize.width,outputSize.height)):1
+        video.renderSize = CGSize(width:max(2,(outputSize.width*scale/2).rounded()*2),height:max(2,(outputSize.height*scale/2).rounded()*2))
         video.frameDuration = CMTime(value:1001,timescale:CMTimeScale((project.frameRate*1001).rounded()))
         video.instructions = [CutInstruction(duration:project.duration,layers:layers)]
         let audio = AVMutableAudioMix()

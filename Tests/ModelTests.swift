@@ -61,6 +61,9 @@ import Foundation
         precondition(!professional.professionalEdit(center.id,mode:.slip,frames:3000) && professional==before)
         precondition(professional.dissolveInto(center.id,seconds:0.5))
         precondition(professional.clips[1].fadeIn==0.5 && professional.duration==10.5)
+        var prefs=StudioPreferences();prefs.canvas = .portrait;prefs.fps=25;prefs.previewLimit=720
+        let restored=try! JSONDecoder().decode(StudioPreferences.self,from:JSONEncoder().encode(prefs))
+        precondition(restored==prefs && restored.newProject().canvas == .portrait && restored.newProject().fps==25)
         print("Project model tests passed")
     }
 }

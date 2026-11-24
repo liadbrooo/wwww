@@ -27,7 +27,11 @@ struct ExportPanel:View {
                 Button("Abbrechen"){dismiss()}
                 Button("Exportieren…"){dismiss();DispatchQueue.main.async {e.performExport(format:format,uhd:uhd,fps:fps==0 ? nil:fps)}}.keyboardShortcut(.defaultAction).buttonStyle(.borderedProminent)
             }
-        }.padding(24).frame(width:480).onAppear{uhd=e.project.ultraHD ?? false}
+        }.padding(24).frame(width:480).onAppear{
+            format=ExportFormat(rawValue:e.prefs.exportFormat) ?? .mp4
+            uhd=e.prefs.exportResolution=="project" ? (e.project.ultraHD ?? false):e.prefs.exportResolution=="uhd"
+            fps=e.prefs.exportFPS
+        }
     }
     var exportSize:CGSize {var p=e.project;p.ultraHD=uhd;return p.renderSize}
 }

@@ -30,3 +30,6 @@ Native vector recreation of the new glass L / timeline identity and redesigned D
 Dynamic video/audio tracks, track locks/mute/visibility, group selection/move/delete/split, markers, workspace switcher and shared .lyrocut JSON schema v1. Cross-platform projects reference local source files; relink by file name. Browser compatibility covers a subset of native effects and media types.\n
 ## 0.5.0 Professional Editing (first increment)
 Frame-based ripple, roll, slip and slide operations with source handle checks and atomic rejection, plus overlapping same-track cross-dissolves with audio fades. Pro Trim menu. Still planned: multicam, nested sequences, proxies, richer transitions, GPU web export and full production validation.
+
+## 0.5.1 Preferences
+Native Settings window, persistent local preferences, new-project defaults, source matching, timeline density/visibility, undo depth, preview resolution cap, export defaults and recovery controls. Existing project settings are not overwritten.

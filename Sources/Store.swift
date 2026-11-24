@@ -5,6 +5,14 @@ import AppKit
 import UniformTypeIdentifiers
 
 @MainActor final class Editor: ObservableObject {
+    @Published var prefs=StudioPreferences() {
+        didSet {
+            if let data=try? JSONEncoder().encode(prefs){UserDefaults.standard.set(data,forKey:"LYRO.StudioPreferences.v1")}
+            if oldValue.previewLimit != prefs.previewLimit {refresh()}
+            if oldValue.undoLimit != prefs.undoLimit && undoStack.count>prefs.undoLimit {undoStack=Array(undoStack.suffix(prefs.undoLimit))}
+            if !oldValue.recoveryEnabled && prefs.recoveryEnabled {writeRecovery()}
+        }
+    }
     @Published var project = Project()
     @Published var selected: UUID? {didSet {if let id=selected,!selection.contains(id){selection=[id]} else if selected==nil {selection=[]}}}
     @Published var selection:Set<UUID> = []
@@ -15,8 +23,8 @@ import UniformTypeIdentifiers
     @Published var busy = false
     @Published var exportOptions = false
     @Published var exportProgress: Double = 0
-    @Published var snapping = true
-    @Published var swapping = true
+    @Published var snapping = true {didSet{if prefs.snapping != snapping {prefs.snapping=snapping}}}
+    @Published var swapping = true {didSet{if prefs.swapping != swapping {prefs.swapping=swapping}}}
     private var exportSession: AVAssetExportSession?
     private var cancelRequested=false
     @Published var status = "Bereit"
@@ -37,6 +45,9 @@ import UniformTypeIdentifiers
     private var fileURL: URL?
     private let recovery = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support/LYRO Cut/Recovery.lyrocut")
     init() {
+        if let data=UserDefaults.standard.data(forKey:"LYRO.StudioPreferences.v1"),let saved=try? JSONDecoder().decode(StudioPreferences.self,from:data){prefs=saved}
+        project=prefs.newProject()
+        snapping=prefs.snapping;swapping=prefs.swapping
         observer = player.addPeriodicTimeObserver(forInterval:ct(1.0/30),queue:.main) { [weak self] time in
             Task { @MainActor in
                 guard let self = self else { return }
@@ -44,7 +55,7 @@ import UniformTypeIdentifiers
                 self.playing = self.player.rate != 0
             }
         }
-        if let data = try? Data(contentsOf:recovery), let saved = try? JSONDecoder().decode(Project.self,from:data) {
+        if prefs.recoveryEnabled,prefs.restoreLast,let data = try? Data(contentsOf:recovery), let saved = try? JSONDecoder().decode(Project.self,from:data) {
             project = saved
             refresh()
             Task { await makeThumbnails() }
@@ -57,9 +68,10 @@ import UniformTypeIdentifiers
             else{selection.insert(id);selected=id}
         }else{selection=[id];selected=id}
     }
+    func resetPreferences(){prefs=StudioPreferences();snapping=prefs.snapping;swapping=prefs.swapping}
     func record() {
         undoStack.append(project)
-        if undoStack.count > 80 { undoStack.removeFirst() }
+        if undoStack.count > prefs.undoLimit { undoStack.removeFirst() }
         redoStack.removeAll()
         canUndo = true; canRedo = false
     }
@@ -85,11 +97,15 @@ import UniformTypeIdentifiers
     func changed() {
         if let selected = selected, !project.clips.contains(where:{$0.id == selected}) { self.selected = nil }
         selection.formIntersection(Set(project.clips.map(\.id)))
-        try? FileManager.default.createDirectory(at:recovery.deletingLastPathComponent(),withIntermediateDirectories:true)
-        if let data = try? JSONEncoder().encode(project) {
-            try? data.write(to:recovery,options:.atomic)
-        }
+        writeRecovery()
         refresh()
+    }
+    func writeRecovery(){
+        guard prefs.recoveryEnabled else{return}
+        do {
+            try FileManager.default.createDirectory(at:recovery.deletingLastPathComponent(),withIntermediateDirectories:true)
+            try JSONEncoder().encode(project).write(to:recovery,options:.atomic)
+        } catch {status="Wiederherstellung konnte nicht gespeichert werden"}
     }
     func refresh() {
         refreshTask?.cancel()
@@ -101,7 +117,7 @@ import UniformTypeIdentifiers
                 player.replaceCurrentItem(with:nil); playing = false; return
             }
             do {
-                let graph = try await Renderer.build(snapshot,preview:true)
+                let graph = try await Renderer.build(snapshot,preview:true,previewLimit:prefs.previewLimit)
                 guard !Task.isCancelled else { return }
                 let at = min(playhead,max(0,snapshot.duration-0.001))
                 let resume = player.rate != 0
@@ -184,7 +200,7 @@ import UniformTypeIdentifiers
         let start = position.map{max(0,project.snap($0))} ?? project.clips.filter{$0.lane == lane}.map(\.end).max() ?? 0
         let clip = Clip(mediaID:media.id,name:media.name,kind:media.kind,start:start,length:media.duration,lane:lane)
         change { p in
-            if media.kind == .video && !p.clips.contains(where:{$0.kind == .video}) {p.useSource(media)}
+            if prefs.matchSource && media.kind == .video && !p.clips.contains(where:{$0.kind == .video}) {p.useSource(media)}
             var inserted=clip
             // Same-track media drops insert into the sequence instead of silently hiding clips.
             if let overlap=p.clips.first(where:{$0.lane==lane && inserted.start>$0.start && inserted.start<$0.end}) {
@@ -232,7 +248,7 @@ import UniformTypeIdentifiers
         var destination = max(0,time)
         let edges: [Double] = project.clips.filter{$0.id != id && !selection.contains($0.id)}.flatMap{ (clip: Clip) -> [Double] in [clip.start,clip.end] } + [playhead,0.0]
         let candidates=edges.flatMap{[$0,$0-c.length]}.filter{$0>=0}
-        if snapping,let edge = candidates.min(by:{abs($0-destination)<abs($1-destination)}), abs(edge-destination) < 8/zoom { destination = edge }
+        if snapping,let edge = candidates.min(by:{abs($0-destination)<abs($1-destination)}), abs(edge-destination) < prefs.snapDistance/zoom { destination = edge }
         else { destination = project.snap(destination) }
         let targetLane=c.kind == .audio ? max(project.lanes.last ?? -2,min(-1,lane)) : max(0,min(project.lanes.first ?? 2,lane))
         guard !project.locked(targetLane) else{status="Spur ist gesperrt";return}
@@ -334,7 +350,7 @@ import UniformTypeIdentifiers
         let alert = NSAlert(); alert.messageText = "Neues Projekt?"; alert.informativeText = "Speichere das aktuelle Projekt, falls du es behalten möchtest."; alert.addButton(withTitle:"Neu"); alert.addButton(withTitle:"Abbrechen")
         guard alert.runModal() == .alertFirstButtonReturn else { return }
         player.pause(); seek(0); fileURL = nil
-        change { $0 = Project() }
+        change { $0 = prefs.newProject() }
     }
     func save(asNew: Bool = false) {
         if fileURL == nil || asNew {
@@ -404,7 +420,7 @@ import UniformTypeIdentifiers
                 if cancelRequested {status="Export abgebrochen";return}
                 if FileManager.default.fileExists(atPath:url.path) {_ = try FileManager.default.replaceItemAt(url,withItemAt:temp)}
                 else {try FileManager.default.moveItem(at:temp,to:url)}
-                exportProgress=1;status="Export abgeschlossen";NSWorkspace.shared.activateFileViewerSelecting([url])
+                exportProgress=1;status="Export abgeschlossen";if prefs.revealExport {NSWorkspace.shared.activateFileViewerSelecting([url])}
             } catch {if cancelRequested {status="Export abgebrochen"} else {self.error=error.localizedDescription;status="Export fehlgeschlagen"}}
         }
     }
