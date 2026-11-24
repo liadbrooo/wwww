@@ -9,3 +9,6 @@ Persistent project defaults, source matching, track density, snap distance, undo
 
 ## 0.6.0 Color & FX
 29 Canvas effects, categorized search and editable ordered stack with strength, mix, enable/bypass, detail and angle where applicable. Cross-platform supported effect IDs are portable; renderer appearance can differ. Advanced settings for projects, FX, monitoring, performance and export. Effects use the same canvas for preview and realtime export; heavy CPU filters may affect frame pacing.
+
+## 0.6.1
+35 visual effects, 16 built-in multi-effect looks, saved local presets, and reusable effect stacks. Browser edition updates via deployment; reload when not editing to obtain the new version.
