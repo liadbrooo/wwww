@@ -13,3 +13,12 @@ jobs:
         with:
           node-version: '22'
       - run: node --check web/app.js && node --check web/core.js && node web/core.test.cjs
+      - run: npm install --no-save playwright
+        working-directory: web
+      - run: npx playwright install --with-deps chromium
+        working-directory: web
+      - run: node web/studio.test.cjs
+      - uses: actions/upload-artifact@v4
+        with:
+          name: LYRO-Cut-Web-Studio-preview
+          path: web/studio.png
