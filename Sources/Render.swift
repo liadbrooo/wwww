@@ -68,19 +68,7 @@ final class CutCompositor: NSObject, AVVideoCompositing {
                     }
                     if c.kind != .title {
                         let bounds = image.extent
-                        for effect in c.effectStack {
-                        let amount = min(1,max(0,effect.intensity))
-                        switch effect.effect {
-                        case .none: break
-                        case .blur: image=image.clampedToExtent().applyingFilter("CIGaussianBlur",parameters:[kCIInputRadiusKey:amount*30]).cropped(to:bounds)
-                        case .sharpen: image=image.applyingFilter("CISharpenLuminance",parameters:[kCIInputSharpnessKey:amount*2])
-                        case .vignette: image=image.applyingFilter("CIVignette",parameters:[kCIInputIntensityKey:amount*3,kCIInputRadiusKey:1.5])
-                        case .pixelate: image=image.applyingFilter("CIPixellate",parameters:[kCIInputScaleKey:2+amount*60]).cropped(to:bounds)
-                        case .bloom: image=image.clampedToExtent().applyingFilter("CIBloom",parameters:[kCIInputIntensityKey:amount,kCIInputRadiusKey:20]).cropped(to:bounds)
-                        case .edges: image=image.applyingFilter("CIEdges",parameters:[kCIInputIntensityKey:amount*8]).cropped(to:bounds)
-                        case .noir: image=image.applyingFilter("CIPhotoEffectNoir")
-                        }
-                        }
+                        for effect in c.effectStack {image=EffectRenderer.apply(effect,to:image)}
                         let maskSize=max(0.05,min(1,c.maskSize ?? 0.8))
                         if c.mask == .rectangle || c.mask == .ellipse {
                             let aspect=max(0.1,min(3,c.maskAspect ?? 1))
@@ -123,6 +111,65 @@ final class CutCompositor: NSObject, AVVideoCompositing {
                 request.finish(withComposedVideoFrame:target)
             }
         }
+    }
+}
+enum EffectRenderer {
+    static func apply(_ effect:EffectLayer,to image:CIImage)->CIImage {
+        guard effect.enabled != false,effect.effect != .none else{return image}
+        let a=min(1,max(0,effect.intensity)),mix=min(1,max(0,effect.mix ?? 1)),d=min(1,max(0,effect.detail ?? 0.5))
+        let angle=(effect.angle ?? 0)*Double.pi/180
+        guard mix>0 else{return image}
+        let b=image.extent,center=CIVector(x:b.midX,y:b.midY)
+        guard !b.isEmpty,!b.isInfinite else{return image}
+        var name="", params:[String:Any]=[:],clamp=false
+        switch effect.effect {
+        case .none:return image
+        case .blur:name="CIGaussianBlur";params=["inputRadius":a*50];clamp=true
+        case .sharpen:name="CISharpenLuminance";params=["inputSharpness":a*2]
+        case .motionBlur:name="CIMotionBlur";params=["inputRadius":a*60,"inputAngle":angle];clamp=true
+        case .zoomBlur:name="CIZoomBlur";params=["inputAmount":a*40,"inputCenter":center];clamp=true
+        case .median:name="CIMedianFilter"
+        case .unsharp:name="CIUnsharpMask";params=["inputRadius":1+d*15,"inputIntensity":a*2];clamp=true
+        case .exposure:name="CIExposureAdjust";params=["inputEV":(a-0.5)*4]
+        case .gamma:name="CIGammaAdjust";params=["inputPower":0.3+a*2]
+        case .temperature:name="CITemperatureAndTint";params=["inputNeutral":CIVector(x:6500,y:0),"inputTargetNeutral":CIVector(x:3500+a*6500,y:0)]
+        case .hue:name="CIHueAdjust";params=["inputAngle":(a-0.5)*2*Double.pi]
+        case .saturation:name="CIColorControls";params=["inputSaturation":a*2]
+        case .contrast:name="CIColorControls";params=["inputContrast":0.5+a*1.5]
+        case .highlightShadow:name="CIHighlightShadowAdjust";params=["inputShadowAmount":a,"inputHighlightAmount":1-d]
+        case .invert:name="CIColorInvert"
+        case .monochrome:name="CIPhotoEffectMono"
+        case .sepia:name="CISepiaTone";params=["inputIntensity":a]
+        case .vignette:name="CIVignette";params=["inputIntensity":a*3,"inputRadius":0.2+d*2]
+        case .noir:name="CIPhotoEffectNoir"
+        case .chrome:name="CIPhotoEffectChrome"
+        case .fade:name="CIPhotoEffectFade"
+        case .instant:name="CIPhotoEffectInstant"
+        case .process:name="CIPhotoEffectProcess"
+        case .transfer:name="CIPhotoEffectTransfer"
+        case .posterize:name="CIColorPosterize";params=["inputLevels":2+round((1-a)*18)]
+        case .comic:name="CIComicEffect"
+        case .edges:name="CIEdges";params=["inputIntensity":a*8]
+        case .bloom:name="CIBloom";params=["inputIntensity":a,"inputRadius":2+d*40];clamp=true
+        case .gloom:name="CIGloom";params=["inputIntensity":a,"inputRadius":2+d*40];clamp=true
+        case .pixelate:name="CIPixellate";params=["inputScale":2+a*70,"inputCenter":center]
+        case .hexPixelate:name="CIHexagonalPixellate";params=["inputScale":2+a*70,"inputCenter":center]
+        case .crystallize:name="CICrystallize";params=["inputRadius":2+a*55,"inputCenter":center]
+        case .dotScreen:name="CIDotScreen";params=["inputWidth":2+d*25,"inputSharpness":a,"inputAngle":angle,"inputCenter":center]
+        case .lineScreen:name="CILineScreen";params=["inputWidth":2+d*25,"inputSharpness":a,"inputAngle":angle,"inputCenter":center]
+        case .twirl:name="CITwirlDistortion";params=["inputRadius":min(b.width,b.height)*(0.1+d*0.6),"inputAngle":(a-0.5)*8+angle,"inputCenter":center]
+        case .bump:name="CIBumpDistortion";params=["inputRadius":min(b.width,b.height)*(0.1+d*0.6),"inputScale":a,"inputCenter":center]
+        case .pinch:name="CIPinchDistortion";params=["inputRadius":min(b.width,b.height)*(0.1+d*0.6),"inputScale":a,"inputCenter":center]
+        }
+        guard let filter=CIFilter(name:name) else{return image}
+        filter.setDefaults();filter.setValue(clamp ? image.clampedToExtent():image,forKey:kCIInputImageKey)
+        for (key,value) in params where filter.inputKeys.contains(key){filter.setValue(value,forKey:key)}
+        guard let raw=filter.outputImage else{return image}
+        let result=raw.cropped(to:b)
+        let fixed:[Effect]=[.median,.invert,.monochrome,.noir,.chrome,.fade,.instant,.process,.transfer,.comic]
+        let opacity=mix*(fixed.contains(effect.effect) ? a:1)
+        if opacity>=0.9999{return result}
+        return image.applyingFilter("CIDissolveTransition",parameters:["inputTargetImage":result,"inputTime":opacity]).cropped(to:b)
     }
 }
 struct RenderGraph {
@@ -223,7 +270,7 @@ enum Renderer {
         audio.inputParameters = audioParameters
         return RenderGraph(composition:comp,video:video,audio:audio)
     }
-    static func export(_ graph: RenderGraph,to url: URL,format:ExportFormat = .mp4,onSession:((AVAssetExportSession)->Void)? = nil) async throws {
+    static func export(_ graph: RenderGraph,to url: URL,format:ExportFormat = .mp4,networkOptimized:Bool = true,onSession:((AVAssetExportSession)->Void)? = nil) async throws {
         let preset=format == .proRes ? AVAssetExportPresetAppleProRes422LPCM : AVAssetExportPresetHighestQuality
         guard let session = AVAssetExportSession(asset:graph.composition,presetName:preset) else { throw RenderError.invalid("Export") }
         session.videoComposition = graph.video
@@ -232,7 +279,7 @@ enum Renderer {
         session.outputFileType = format == .mp4 ? .mp4 : .mov
         guard session.supportedFileTypes.contains(session.outputFileType!) else {throw RenderError.invalid("Exportformat")}
         onSession?(session)
-        session.shouldOptimizeForNetworkUse = true
+        session.shouldOptimizeForNetworkUse = networkOptimized
         await withCheckedContinuation { (continuation: CheckedContinuation<Void,Never>) in
             session.exportAsynchronously { continuation.resume() }
         }

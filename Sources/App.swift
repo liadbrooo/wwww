@@ -104,7 +104,7 @@ struct Workspace: View {
                 }
                 Spacer()
                 Text("LOKAL  ·  " + e.project.canvas.rawValue + "  ·  " + String(e.project.fps) + " FPS")
-                Text("v0.5.1").foregroundStyle(.tertiary)
+                Text("v0.6.0").foregroundStyle(.tertiary)
             }.font(.system(size:11,weight:.medium)).foregroundStyle(.secondary).padding(.horizontal,14).frame(height:27).background(panel)
         }.background(bg)
         .tint(accent)
@@ -162,9 +162,9 @@ struct Workspace: View {
                 Text(stamp(e.playhead)).font(.system(size:12,design:.monospaced)).foregroundStyle(accent)
                 Spacer()
                 Tool(symbol:"backward.end.fill",help:"Anfang") {e.seek(0)}
-                Tool(symbol:"backward.frame",help:"Ein Frame zurück") {e.seek(e.playhead-1/e.project.frameRate)}
+                Tool(symbol:"backward.frame",help:"Ein Frame zurück") {e.seek(e.playhead-Double(e.prefs.seekFrames ?? 1)/e.project.frameRate)}
                 Tool(symbol:e.playing ? "pause.fill":"play.fill",help:"Abspielen / Pause") {e.toggle()}
-                Tool(symbol:"forward.frame",help:"Ein Frame vor") {e.seek(e.playhead+1/e.project.frameRate)}
+                Tool(symbol:"forward.frame",help:"Ein Frame vor") {e.seek(e.playhead+Double(e.prefs.seekFrames ?? 1)/e.project.frameRate)}
                 Tool(symbol:"forward.end.fill",help:"Ende") {e.seek(e.project.duration)}
                 Spacer()
                 Text(stamp(e.project.duration)).font(.system(size:12,design:.monospaced)).foregroundStyle(.secondary)

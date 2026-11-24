@@ -8,7 +8,9 @@ import UniformTypeIdentifiers
     @Published var prefs=StudioPreferences() {
         didSet {
             if let data=try? JSONEncoder().encode(prefs){UserDefaults.standard.set(data,forKey:"LYRO.StudioPreferences.v1")}
-            if oldValue.previewLimit != prefs.previewLimit {refresh()}
+            if oldValue.previewLimit != prefs.previewLimit || oldValue.previewEffects != prefs.previewEffects {refresh()}
+            player.volume=Float(prefs.monitorVolume ?? 1)
+            if oldValue.autoAnalyzeAudio != prefs.autoAnalyzeAudio && prefs.autoAnalyzeAudio != false {Task {await makeThumbnails()}}
             if oldValue.undoLimit != prefs.undoLimit && undoStack.count>prefs.undoLimit {undoStack=Array(undoStack.suffix(prefs.undoLimit))}
             if !oldValue.recoveryEnabled && prefs.recoveryEnabled {writeRecovery()}
         }
@@ -39,6 +41,7 @@ import UniformTypeIdentifiers
     let player = AVPlayer()
     private var observer: Any?
     private var refreshTask: Task<Void,Never>?
+    private var recoveryTask:Task<Void,Never>?
     private var undoStack: [Project] = []
     private var redoStack: [Project] = []
     private var lastEdit: (UUID,Date)?
@@ -46,7 +49,7 @@ import UniformTypeIdentifiers
     private let recovery = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support/LYRO Cut/Recovery.lyrocut")
     init() {
         if let data=UserDefaults.standard.data(forKey:"LYRO.StudioPreferences.v1"),let saved=try? JSONDecoder().decode(StudioPreferences.self,from:data){prefs=saved}
-        project=prefs.newProject()
+        project=prefs.newProject();zoom=prefs.defaultZoom ?? 48;player.volume=Float(prefs.monitorVolume ?? 1)
         snapping=prefs.snapping;swapping=prefs.swapping
         observer = player.addPeriodicTimeObserver(forInterval:ct(1.0/30),queue:.main) { [weak self] time in
             Task { @MainActor in
@@ -97,7 +100,8 @@ import UniformTypeIdentifiers
     func changed() {
         if let selected = selected, !project.clips.contains(where:{$0.id == selected}) { self.selected = nil }
         selection.formIntersection(Set(project.clips.map(\.id)))
-        writeRecovery()
+        recoveryTask?.cancel()
+        recoveryTask=Task {try? await Task.sleep(nanoseconds:UInt64(max(0,prefs.recoveryDelay ?? 0))*1_000_000);if !Task.isCancelled{writeRecovery()}}
         refresh()
     }
     func writeRecovery(){
@@ -109,9 +113,10 @@ import UniformTypeIdentifiers
     }
     func refresh() {
         refreshTask?.cancel()
-        let snapshot = project
+        var snapshot = project
+        if prefs.previewEffects == false {for i in snapshot.clips.indices {snapshot.clips[i].effects=[];snapshot.clips[i].effect=nil}}
         refreshTask = Task {
-            try? await Task.sleep(nanoseconds:180_000_000)
+            try? await Task.sleep(nanoseconds:UInt64(prefs.refreshDelay ?? 180)*1_000_000)
             guard !Task.isCancelled else { return }
             if !snapshot.clips.contains(where:{$0.kind == .video}) {
                 player.replaceCurrentItem(with:nil); playing = false; return
@@ -173,7 +178,7 @@ import UniformTypeIdentifiers
         if !failures.isEmpty { error = "Nicht unterstützte Medien: " + failures.joined(separator:", ") }
     }
     func makeThumbnails() async {
-        for media in project.media where waveforms[media.id] == nil && !waveformPending.contains(media.id) {
+        for media in project.media where prefs.autoAnalyzeAudio != false && waveforms[media.id] == nil && !waveformPending.contains(media.id) {
             waveformPending.insert(media.id)
             let id=media.id
             let path=media.path
@@ -198,7 +203,7 @@ import UniformTypeIdentifiers
         let lane = media.kind == .audio ? max(project.lanes.last ?? -2,min(-1,requested ?? -1)) : max(0,min(project.lanes.first ?? 2,requested ?? 0))
         guard !project.locked(lane) else{status="Spur ist gesperrt";return}
         let start = position.map{max(0,project.snap($0))} ?? project.clips.filter{$0.lane == lane}.map(\.end).max() ?? 0
-        let clip = Clip(mediaID:media.id,name:media.name,kind:media.kind,start:start,length:media.duration,lane:lane)
+        var clip = Clip(mediaID:media.id,name:media.name,kind:media.kind,start:start,length:media.duration,lane:lane);clip.fill=prefs.defaultFill ?? false
         change { p in
             if prefs.matchSource && media.kind == .video && !p.clips.contains(where:{$0.kind == .video}) {p.useSource(media)}
             var inserted=clip
@@ -214,7 +219,7 @@ import UniformTypeIdentifiers
     }
     func addTitle() {
         guard !project.locked(2) else{status="Spur ist gesperrt";return}
-        let clip = Clip(name:"Titel",kind:.title,start:playhead,length:3,lane:2)
+        let clip = Clip(name:"Titel",kind:.title,start:playhead,length:prefs.defaultTitleDuration ?? 3,lane:2)
         change { $0.clips.append(clip) }; selected = clip.id
     }
     func split() {
@@ -402,6 +407,7 @@ import UniformTypeIdentifiers
         let panel=NSSavePanel()
         panel.allowedContentTypes=[format == .mp4 ? .mpeg4Movie:.quickTimeMovie]
         panel.nameFieldStringValue=project.name+"."+format.suffix
+        if let path=prefs.defaultExportFolder {panel.directoryURL=URL(fileURLWithPath:path,isDirectory:true)}
         guard panel.runModal() == .OK,let url=panel.url else{return}
         busy=true;exportProgress=0;cancelRequested=false;status="Export läuft…";player.pause()
         Task {
@@ -416,7 +422,7 @@ import UniformTypeIdentifiers
             do {
                 let graph=try await Renderer.build(snapshot)
                 if cancelRequested {status="Export abgebrochen";return}
-                try await Renderer.export(graph,to:temp,format:format,onSession:{session in self.exportSession=session})
+                try await Renderer.export(graph,to:temp,format:format,networkOptimized:prefs.networkOptimized ?? true,onSession:{session in self.exportSession=session})
                 if cancelRequested {status="Export abgebrochen";return}
                 if FileManager.default.fileExists(atPath:url.path) {_ = try FileManager.default.replaceItemAt(url,withItemAt:temp)}
                 else {try FileManager.default.moveItem(at:temp,to:url)}

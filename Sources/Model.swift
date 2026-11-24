@@ -4,7 +4,13 @@ import CoreGraphics
 enum ClipKind: String, Codable, CaseIterable { case video, audio, title }
 enum Look: String, Codable, CaseIterable { case original, monochrome, warm, cool, vivid, vintage }
 enum Motion: String, Codable, CaseIterable { case none, zoomIn, zoomOut, slideLeft, slideRight }
-enum Effect: String, Codable, CaseIterable { case none, blur, sharpen, vignette, pixelate, bloom, edges, noir }
+enum Effect: String, Codable, CaseIterable {
+    case none, blur, sharpen, motionBlur, zoomBlur, median, unsharp, exposure, gamma, temperature, hue, saturation, contrast, highlightShadow, invert, monochrome, sepia, vignette, noir, chrome, fade, instant, process, transfer, posterize, comic, edges, bloom, gloom, pixelate, hexPixelate, crystallize, dotScreen, lineScreen, twirl, bump, pinch
+    var title:String {switch self {case .none:return "Keine";case .blur:return "Gaußsche Unschärfe";case .sharpen:return "Schärfen";case .motionBlur:return "Bewegungsunschärfe";case .zoomBlur:return "Zoom-Unschärfe";case .median:return "Median";case .unsharp:return "Unscharf maskieren";case .exposure:return "Belichtung";case .gamma:return "Gamma";case .temperature:return "Farbtemperatur";case .hue:return "Farbton";case .saturation:return "Sättigung";case .contrast:return "Kontrast";case .highlightShadow:return "Lichter & Schatten";case .invert:return "Negativ";case .monochrome:return "Schwarzweiß";case .sepia:return "Sepia";case .vignette:return "Vignette";case .noir:return "Noir";case .chrome:return "Chrome";case .fade:return "Fade Film";case .instant:return "Instant Film";case .process:return "Process Film";case .transfer:return "Transfer Film";case .posterize:return "Posterisation";case .comic:return "Comic";case .edges:return "Kanten";case .bloom:return "Bloom";case .gloom:return "Gloom";case .pixelate:return "Mosaik";case .hexPixelate:return "Hexagon-Mosaik";case .crystallize:return "Kristall";case .dotScreen:return "Rasterpunkte";case .lineScreen:return "Linienraster";case .twirl:return "Wirbel";case .bump:return "Wölbung";case .pinch:return "Pinch"}}
+    var category:String {switch self {case .none:return "Andere";case .blur,.sharpen,.motionBlur,.zoomBlur,.median,.unsharp:return "Schärfe & Unschärfe";case .exposure,.gamma,.temperature,.hue,.saturation,.contrast,.highlightShadow,.invert,.monochrome,.sepia:return "Licht & Farbe";case .vignette,.noir,.chrome,.fade,.instant,.process,.transfer,.posterize,.comic,.edges,.bloom,.gloom:return "Film & Stil";case .pixelate,.hexPixelate,.crystallize,.dotScreen,.lineScreen,.twirl,.bump,.pinch:return "Verzerrung & Struktur"}}
+    var hasDetail:Bool{[.motionBlur,.zoomBlur,.unsharp,.bloom,.gloom,.vignette,.dotScreen,.lineScreen,.twirl,.bump,.pinch,.highlightShadow].contains(self)}
+    var hasAngle:Bool{[.motionBlur,.dotScreen,.lineScreen,.twirl].contains(self)}
+}
 enum Mask: String, Codable, CaseIterable { case none, rectangle, ellipse }
 enum ExportFormat: String, CaseIterable { case mp4, mov, proRes
     var suffix:String { self == .mp4 ? "mp4":"mov" }
@@ -14,6 +20,10 @@ struct EffectLayer: Identifiable, Codable, Equatable {
     var id=UUID()
     var effect:Effect
     var intensity:Double=0.5
+    var enabled:Bool? = nil
+    var mix:Double? = nil
+    var detail:Double? = nil
+    var angle:Double? = nil
 }
 enum Ease: String, Codable, CaseIterable { case linear, smooth, easeIn, easeOut }
 struct Keyframe: Identifiable, Codable, Equatable {
@@ -303,7 +313,23 @@ struct StudioPreferences: Codable, Equatable {
     var exportResolution="project"
     var exportFPS=0
     var revealExport=true
+    var defaultVideoTracks:Int? = nil
+    var defaultAudioTracks:Int? = nil
+    var defaultTitleDuration:Double? = nil
+    var defaultFill:Bool? = nil
+    var defaultZoom:Double? = nil
+    var previewEffects:Bool? = nil
+    var monitorVolume:Double? = nil
+    var seekFrames:Int? = nil
+    var defaultEffectMix:Double? = nil
+    var defaultEffectStrength:Double? = nil
+    var refreshDelay:Int? = nil
+    var defaultDissolve:Double? = nil
+    var defaultExportFolder:String? = nil
+    var networkOptimized:Bool? = nil
+    var autoAnalyzeAudio:Bool? = nil
+    var recoveryDelay:Int? = nil
     func newProject()->Project {
-        var p=Project();p.canvas=canvas;p.fps=fps;return p
+        var p=Project();p.canvas=canvas;p.fps=fps;p.videoTrackCount=defaultVideoTracks;p.audioTrackCount=defaultAudioTracks;return p
     }
 }

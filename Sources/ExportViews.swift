@@ -38,32 +38,70 @@ struct ExportPanel:View {
 struct EffectStackPanel:View {
     @ObservedObject var e:Editor
     let c:Clip
+    @State private var search=""
+    @State private var showLibrary=false
     var stack:[EffectLayer]{c.effectStack}
+    let groups=["Schärfe & Unschärfe","Licht & Farbe","Film & Stil","Verzerrung & Struktur"]
     var body:some View {
-        VStack(alignment:.leading,spacing:9) {
+        VStack(alignment:.leading,spacing:10) {
             HStack {
                 Text("EFFEKTSTAPEL").font(.system(size:10,weight:.semibold)).foregroundStyle(.secondary)
                 Spacer()
-                Menu {
-                    ForEach(Effect.allCases.filter{$0 != .none},id:\.self){effect in
-                        Button(effect.rawValue.capitalized){e.edit(c.id){clip in clip.effects=clip.effectStack+[EffectLayer(effect:effect)]}}
-                    }
-                } label:{Image(systemName:"plus.circle")}.menuStyle(.borderlessButton).frame(width:28)
+                Button{showLibrary.toggle()}label:{Label("Effekte",systemImage:"plus.circle")}.buttonStyle(.bordered)
             }
-            if stack.isEmpty {Text("Effekte hinzufügen und kombinieren.").font(.caption).foregroundStyle(.secondary)}
+            if showLibrary {library}
+            if stack.isEmpty {Text("Kombiniere Effekte in beliebiger Reihenfolge.").font(.caption).foregroundStyle(.secondary)}
             ForEach(Array(stack.enumerated()),id:\.offset){index,layer in
-                VStack(alignment:.leading,spacing:5) {
-                    HStack {
-                        Text(layer.effect.rawValue.capitalized).font(.caption.bold())
-                        Spacer()
-                        Button{shift(index,-1)} label:{Image(systemName:"chevron.up")}.buttonStyle(.plain).disabled(index==0)
-                        Button{shift(index,1)} label:{Image(systemName:"chevron.down")}.buttonStyle(.plain).disabled(index==stack.count-1)
-                        Button{e.edit(c.id){clip in var items=clip.effectStack;if items.indices.contains(index){items.remove(at:index)};clip.effects=items}} label:{Image(systemName:"xmark.circle")}.buttonStyle(.plain)
-                    }
-                    Slider(value:Binding<Double>(get:{layer.intensity},set:{v in e.edit(c.id){clip in var items=clip.effectStack;if items.indices.contains(index){items[index].intensity=v};clip.effects=items}}),in:0...1)
-                }.padding(8).background(Color.white.opacity(0.06),in:RoundedRectangle(cornerRadius:6))
+                EffectCard(e:e,c:c,index:index,layer:layer,total:stack.count)
             }
+            if !stack.isEmpty{Button("Alle Effekte entfernen"){e.edit(c.id){$0.effects=[];$0.effect=nil}}.font(.caption)}
         }
     }
-    func shift(_ i:Int,_ offset:Int){e.edit(c.id){clip in var items=clip.effectStack;let j=i+offset;if items.indices.contains(i) && items.indices.contains(j){items.swapAt(i,j)};clip.effects=items}}
+    var library:some View {
+        VStack(alignment:.leading,spacing:7){
+            TextField("Effekte suchen",text:$search).textFieldStyle(.roundedBorder)
+            ForEach(groups,id:\.self){group in
+                let matching=Effect.allCases.filter{$0.category==group && (search.isEmpty || $0.title.localizedCaseInsensitiveContains(search))}
+                if !matching.isEmpty {
+                    Text(group.uppercased()).font(.system(size:9,weight:.semibold)).foregroundStyle(.secondary)
+                    ForEach(matching,id:\.self){effect in
+                        Button {
+                            var layer=EffectLayer(effect:effect,intensity:e.prefs.defaultEffectStrength ?? 0.5)
+                            layer.mix=e.prefs.defaultEffectMix ?? 1
+                            e.edit(c.id){$0.effects=$0.effectStack+[layer]}
+                            showLibrary=false
+                        }label:{HStack{Text(effect.title);Spacer();Image(systemName:"plus")}.font(.caption).padding(4)}.buttonStyle(.plain)
+                    }
+                }
+            }
+        }.padding(8).background(Color.black.opacity(0.2),in:RoundedRectangle(cornerRadius:6))
+    }
+}
+struct EffectCard:View {
+    @ObservedObject var e:Editor
+    let c:Clip
+    let index:Int
+    let layer:EffectLayer
+    let total:Int
+    func modify(_ change:(inout EffectLayer)->Void){e.edit(c.id){clip in var items=clip.effectStack;guard items.indices.contains(index) else{return};change(&items[index]);clip.effects=items}}
+    func shift(_ offset:Int){e.edit(c.id){clip in var items=clip.effectStack;let j=index+offset;if items.indices.contains(index) && items.indices.contains(j){items.swapAt(index,j)};clip.effects=items}}
+    var body:some View {
+        VStack(alignment:.leading,spacing:6){
+            HStack(spacing:6){
+                Button{modify{$0.enabled = !($0.enabled ?? true)}}label:{Image(systemName:layer.enabled==false ? "eye.slash":"eye")}.buttonStyle(.plain)
+                Text(layer.effect.title).font(.caption.bold())
+                Spacer(minLength:0)
+                Button{shift(-1)}label:{Image(systemName:"chevron.up")}.disabled(index==0).buttonStyle(.plain)
+                Button{shift(1)}label:{Image(systemName:"chevron.down")}.disabled(index==total-1).buttonStyle(.plain)
+                Button{e.edit(c.id){clip in var items=clip.effectStack;if items.indices.contains(index){items.remove(at:index)};clip.effects=items}}label:{Image(systemName:"xmark.circle")}.buttonStyle(.plain)
+            }
+            parameter("Stärke",layer.intensity,0...1){v in modify{$0.intensity=v}}
+            parameter("Mischung",layer.mix ?? 1,0...1){v in modify{$0.mix=v}}
+            if layer.effect.hasDetail {parameter("Detail / Radius",layer.detail ?? 0.5,0...1){v in modify{$0.detail=v}}}
+            if layer.effect.hasAngle {parameter("Winkel",layer.angle ?? 0,-180...180){v in modify{$0.angle=v}}}
+        }.padding(8).background(Color.white.opacity(0.06),in:RoundedRectangle(cornerRadius:6)).opacity(layer.enabled==false ? 0.6:1)
+    }
+    func parameter(_ title:String,_ value:Double,_ range:ClosedRange<Double>,_ set:@escaping(Double)->Void)->some View {
+        VStack(spacing:2){HStack{Text(title);Spacer();Text(String(format:"%.2f",value)).monospacedDigit()}.font(.caption2).foregroundStyle(.secondary);Slider(value:Binding(get:{value},set:set),in:range)}
+    }
 }

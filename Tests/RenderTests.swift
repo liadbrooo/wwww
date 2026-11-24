@@ -93,6 +93,13 @@ import AppKit
         let uhdFPS=try await uhdTrack.load(.nominalFrameRate)
         guard uhdSize==CGSize(width:2160,height:3840),abs(uhdFPS-25)<0.1 else{throw RenderError.invalid("UHD export metadata")}
         print("Actual UHD export passed")
+        let fixture=CIImage(color:CIColor(red:0.3,green:0.6,blue:0.9)).cropped(to:CGRect(x:0,y:0,width:64,height:64))
+        let ci=CIContext()
+        for effect in Effect.allCases where effect != .none {
+            let result=EffectRenderer.apply(EffectLayer(effect:effect,intensity:0.8),to:fixture)
+            guard result.extent==fixture.extent,ci.createCGImage(result,from:fixture.extent) != nil else{throw RenderError.invalid("Effect "+effect.rawValue)}
+        }
+        print("Effect catalog render tests passed")
         print("Real AVFoundation import, composition, title, motion, color effect and MP4 export passed")
     }
 }

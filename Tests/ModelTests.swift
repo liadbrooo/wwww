@@ -64,6 +64,11 @@ import Foundation
         var prefs=StudioPreferences();prefs.canvas = .portrait;prefs.fps=25;prefs.previewLimit=720
         let restored=try! JSONDecoder().decode(StudioPreferences.self,from:JSONEncoder().encode(prefs))
         precondition(restored==prefs && restored.newProject().canvas == .portrait && restored.newProject().fps==25)
+        precondition(Effect.allCases.count==37)
+        let oldLayer=try! JSONDecoder().decode(EffectLayer.self,from:JSONEncoder().encode(EffectLayer(effect:.blur)))
+        precondition(oldLayer.mix==nil && oldLayer.enabled==nil)
+        prefs.defaultVideoTracks=6;prefs.defaultAudioTracks=4
+        precondition(prefs.newProject().lanes.count==10)
         print("Project model tests passed")
     }
 }

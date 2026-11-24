@@ -33,3 +33,6 @@ Frame-based ripple, roll, slip and slide operations with source handle checks an
 
 ## 0.5.1 Preferences
 Native Settings window, persistent local preferences, new-project defaults, source matching, timeline density/visibility, undo depth, preview resolution cap, export defaults and recovery controls. Existing project settings are not overwritten.
+
+## 0.6.0 Color & FX
+36 Core Image effects with categorized search, adjustable strength/mix, per-effect bypass, radius/detail and angle where applicable. Extended settings for new projects, preview, monitoring, effects, performance and output. Model and effect-render smoke tests; native UI still requires interactive validation.
