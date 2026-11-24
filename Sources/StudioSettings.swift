@@ -4,7 +4,7 @@ struct StudioSettings:View {
     @ObservedObject var e:Editor
     @State private var category="Allgemein"
     @State private var reset=false
-    let categories=[("Allgemein","gearshape"),("Timeline","timeline.selection"),("Wiedergabe","play.rectangle"),("Export","square.and.arrow.up"),("Speicherung","externaldrive"),("Effekte","wand.and.stars"),("Audio","waveform"),("Leistung","speedometer"),("Kurzbefehle","keyboard")]
+    let categories=[("Allgemein","gearshape"),("Timeline","timeline.selection"),("Wiedergabe","play.rectangle"),("Export","square.and.arrow.up"),("Speicherung","externaldrive"),("Effekte","wand.and.stars"),("Audio","waveform"),("Leistung","speedometer"),("Updates","arrow.triangle.2.circlepath"),("Kurzbefehle","keyboard")]
     var body:some View {
         HStack(spacing:0){
             VStack(alignment:.leading,spacing:5){
@@ -16,7 +16,7 @@ struct StudioSettings:View {
                     }.buttonStyle(.plain)
                 }
                 Spacer()
-                Text("LYRO CUT 0.6.0").font(.caption2).foregroundStyle(.secondary)
+                Text("LYRO CUT 0.6.1").font(.caption2).foregroundStyle(.secondary)
             }.padding(16).frame(width:190).background(panel)
             Divider()
             VStack(alignment:.leading,spacing:14){
@@ -94,6 +94,8 @@ struct StudioSettings:View {
                 Picker("Vorschau nach Bearbeitung aktualisieren",selection:option(\.refreshDelay,180)){Text("Schnell").tag(80);Text("Ausgewogen").tag(180);Text("Entlastet").tag(500)}
                 Text("Reduziere die Vorschauauflösung oder deaktiviere Effektvorschau bei großen Projekten.").font(.caption)
             }
+        case "Updates":
+            UpdateSettings(e:e)
         default:
             Section("Tastatur"){
                 ForEach([("Projekt speichern","⌘ S"),("Projekt öffnen","⌘ O"),("Medien importieren","⌘ I"),("Rückgängig","⌘ Z"),("Clip teilen","⌘ B"),("Abspielen / Pause","Leertaste"),("Exportieren","⌘ E"),("Einstellungen","⌘ ,")],id:\.0){item in LabeledContent(item.0,value:item.1)}

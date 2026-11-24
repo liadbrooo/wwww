@@ -18,11 +18,12 @@ func laneColor(_ lane: Int) -> Color { lane < 0 ? Color(red:0.22,green:0.66,blue
     @StateObject private var editor = Editor()
     var body: some Scene {
         WindowGroup("LYRO Cut") {
-            Workspace(e:editor).frame(minWidth:1000,minHeight:680).preferredColorScheme(.dark)
+            Workspace(e:editor).frame(minWidth:1000,minHeight:680).preferredColorScheme(.dark).task {await StudioUpdater.shared.checkAutomatically(editor)}
         }
         .windowStyle(.hiddenTitleBar)
         .defaultSize(width:1400,height:900)
         .commands {
+            CommandGroup(after:.appInfo){Button("Nach Updates suchen…"){Task{await StudioUpdater.shared.check(editor,manual:true)}}}
             CommandGroup(replacing:.newItem) {
                 Button("Neues Projekt") { editor.newProject() }.keyboardShortcut("n")
                 Button("Projekt öffnen") { editor.open() }.keyboardShortcut("o")
@@ -104,7 +105,7 @@ struct Workspace: View {
                 }
                 Spacer()
                 Text("LOKAL  ·  " + e.project.canvas.rawValue + "  ·  " + String(e.project.fps) + " FPS")
-                Text("v0.6.0").foregroundStyle(.tertiary)
+                Text("v0.6.1").foregroundStyle(.tertiary)
             }.font(.system(size:11,weight:.medium)).foregroundStyle(.secondary).padding(.horizontal,14).frame(height:27).background(panel)
         }.background(bg)
         .tint(accent)

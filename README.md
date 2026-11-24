@@ -36,3 +36,6 @@ Native Settings window, persistent local preferences, new-project defaults, sour
 
 ## 0.6.0 Color & FX
 36 Core Image effects with categorized search, adjustable strength/mix, per-effect bypass, radius/detail and angle where applicable. Extended settings for new projects, preview, monitoring, effects, performance and output. Model and effect-render smoke tests; native UI still requires interactive validation.
+
+## 0.6.1 FX Presets & Updates
+42 native effects, 16 built-in looks, custom saved effect stacks, GitHub Releases with SHA-256 manifests, native update checks and confirmed installation. Updater verifies bundle ID/version and ad-hoc signature integrity, saves the active project, replaces only the installed bundle, and relaunches. Requires writable non-DMG app location. Not Developer ID notarized or independently signed; this is a GitHub-trust development updater, not yet a hardened public distribution system. Test actual replacement with a later release on a real Mac.

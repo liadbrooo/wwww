@@ -5,9 +5,10 @@ enum ClipKind: String, Codable, CaseIterable { case video, audio, title }
 enum Look: String, Codable, CaseIterable { case original, monochrome, warm, cool, vivid, vintage }
 enum Motion: String, Codable, CaseIterable { case none, zoomIn, zoomOut, slideLeft, slideRight }
 enum Effect: String, Codable, CaseIterable {
+    case falseColor, threshold, solarize, mirrorX, mirrorY, kaleidoscope
     case none, blur, sharpen, motionBlur, zoomBlur, median, unsharp, exposure, gamma, temperature, hue, saturation, contrast, highlightShadow, invert, monochrome, sepia, vignette, noir, chrome, fade, instant, process, transfer, posterize, comic, edges, bloom, gloom, pixelate, hexPixelate, crystallize, dotScreen, lineScreen, twirl, bump, pinch
-    var title:String {switch self {case .none:return "Keine";case .blur:return "Gaußsche Unschärfe";case .sharpen:return "Schärfen";case .motionBlur:return "Bewegungsunschärfe";case .zoomBlur:return "Zoom-Unschärfe";case .median:return "Median";case .unsharp:return "Unscharf maskieren";case .exposure:return "Belichtung";case .gamma:return "Gamma";case .temperature:return "Farbtemperatur";case .hue:return "Farbton";case .saturation:return "Sättigung";case .contrast:return "Kontrast";case .highlightShadow:return "Lichter & Schatten";case .invert:return "Negativ";case .monochrome:return "Schwarzweiß";case .sepia:return "Sepia";case .vignette:return "Vignette";case .noir:return "Noir";case .chrome:return "Chrome";case .fade:return "Fade Film";case .instant:return "Instant Film";case .process:return "Process Film";case .transfer:return "Transfer Film";case .posterize:return "Posterisation";case .comic:return "Comic";case .edges:return "Kanten";case .bloom:return "Bloom";case .gloom:return "Gloom";case .pixelate:return "Mosaik";case .hexPixelate:return "Hexagon-Mosaik";case .crystallize:return "Kristall";case .dotScreen:return "Rasterpunkte";case .lineScreen:return "Linienraster";case .twirl:return "Wirbel";case .bump:return "Wölbung";case .pinch:return "Pinch"}}
-    var category:String {switch self {case .none:return "Andere";case .blur,.sharpen,.motionBlur,.zoomBlur,.median,.unsharp:return "Schärfe & Unschärfe";case .exposure,.gamma,.temperature,.hue,.saturation,.contrast,.highlightShadow,.invert,.monochrome,.sepia:return "Licht & Farbe";case .vignette,.noir,.chrome,.fade,.instant,.process,.transfer,.posterize,.comic,.edges,.bloom,.gloom:return "Film & Stil";case .pixelate,.hexPixelate,.crystallize,.dotScreen,.lineScreen,.twirl,.bump,.pinch:return "Verzerrung & Struktur"}}
+    var title:String {switch self {case .none:return "Keine";case .falseColor:return "Duotone";case .threshold:return "Schwellenwert";case .solarize:return "Solarisation";case .mirrorX:return "Horizontal spiegeln";case .mirrorY:return "Vertikal spiegeln";case .kaleidoscope:return "Kaleidoskop";case .blur:return "Gaußsche Unschärfe";case .sharpen:return "Schärfen";case .motionBlur:return "Bewegungsunschärfe";case .zoomBlur:return "Zoom-Unschärfe";case .median:return "Median";case .unsharp:return "Unscharf maskieren";case .exposure:return "Belichtung";case .gamma:return "Gamma";case .temperature:return "Farbtemperatur";case .hue:return "Farbton";case .saturation:return "Sättigung";case .contrast:return "Kontrast";case .highlightShadow:return "Lichter & Schatten";case .invert:return "Negativ";case .monochrome:return "Schwarzweiß";case .sepia:return "Sepia";case .vignette:return "Vignette";case .noir:return "Noir";case .chrome:return "Chrome";case .fade:return "Fade Film";case .instant:return "Instant Film";case .process:return "Process Film";case .transfer:return "Transfer Film";case .posterize:return "Posterisation";case .comic:return "Comic";case .edges:return "Kanten";case .bloom:return "Bloom";case .gloom:return "Gloom";case .pixelate:return "Mosaik";case .hexPixelate:return "Hexagon-Mosaik";case .crystallize:return "Kristall";case .dotScreen:return "Rasterpunkte";case .lineScreen:return "Linienraster";case .twirl:return "Wirbel";case .bump:return "Wölbung";case .pinch:return "Pinch"}}
+    var category:String {switch self {case .none:return "Andere";case .falseColor,.threshold,.solarize:return "Licht & Farbe";case .mirrorX,.mirrorY,.kaleidoscope:return "Verzerrung & Struktur";case .blur,.sharpen,.motionBlur,.zoomBlur,.median,.unsharp:return "Schärfe & Unschärfe";case .exposure,.gamma,.temperature,.hue,.saturation,.contrast,.highlightShadow,.invert,.monochrome,.sepia:return "Licht & Farbe";case .vignette,.noir,.chrome,.fade,.instant,.process,.transfer,.posterize,.comic,.edges,.bloom,.gloom:return "Film & Stil";case .pixelate,.hexPixelate,.crystallize,.dotScreen,.lineScreen,.twirl,.bump,.pinch:return "Verzerrung & Struktur"}}
     var hasDetail:Bool{[.motionBlur,.zoomBlur,.unsharp,.bloom,.gloom,.vignette,.dotScreen,.lineScreen,.twirl,.bump,.pinch,.highlightShadow].contains(self)}
     var hasAngle:Bool{[.motionBlur,.dotScreen,.lineScreen,.twirl].contains(self)}
 }
@@ -329,7 +330,34 @@ struct StudioPreferences: Codable, Equatable {
     var networkOptimized:Bool? = nil
     var autoAnalyzeAudio:Bool? = nil
     var recoveryDelay:Int? = nil
+    var autoCheckUpdates:Bool? = nil
+    var updateCheckHours:Int? = nil
     func newProject()->Project {
         var p=Project();p.canvas=canvas;p.fps=fps;p.videoTrackCount=defaultVideoTracks;p.audioTrackCount=defaultAudioTracks;return p
     }
+}
+
+struct FXPreset:Identifiable,Codable {
+    var id=UUID()
+    var name:String
+    var layers:[EffectLayer]
+    static let builtIn:[FXPreset] = [
+        FXPreset(name:"Cinematic Teal",layers:[EffectLayer(effect:.temperature,intensity:0.24),EffectLayer(effect:.contrast,intensity:0.63),EffectLayer(effect:.vignette,intensity:0.24)]),
+        FXPreset(name:"Golden Hour",layers:[EffectLayer(effect:.temperature,intensity:0.78),EffectLayer(effect:.bloom,intensity:0.23),EffectLayer(effect:.saturation,intensity:0.58)]),
+        FXPreset(name:"Analog Film",layers:[EffectLayer(effect:.fade,intensity:0.7),EffectLayer(effect:.sepia,intensity:0.15),EffectLayer(effect:.vignette,intensity:0.35)]),
+        FXPreset(name:"Urban Noir",layers:[EffectLayer(effect:.noir,intensity:1),EffectLayer(effect:.sharpen,intensity:0.3),EffectLayer(effect:.vignette,intensity:0.32)]),
+        FXPreset(name:"Dream Glow",layers:[EffectLayer(effect:.bloom,intensity:0.5),EffectLayer(effect:.blur,intensity:0.1),EffectLayer(effect:.fade,intensity:0.25)]),
+        FXPreset(name:"Cool Night",layers:[EffectLayer(effect:.temperature,intensity:0.2),EffectLayer(effect:.exposure,intensity:0.42),EffectLayer(effect:.contrast,intensity:0.68)]),
+        FXPreset(name:"Clean Detail",layers:[EffectLayer(effect:.unsharp,intensity:0.3),EffectLayer(effect:.highlightShadow,intensity:0.25),EffectLayer(effect:.saturation,intensity:0.54)]),
+        FXPreset(name:"Vintage 70s",layers:[EffectLayer(effect:.instant,intensity:0.7),EffectLayer(effect:.sepia,intensity:0.3),EffectLayer(effect:.fade,intensity:0.28)]),
+        FXPreset(name:"High Contrast",layers:[EffectLayer(effect:.contrast,intensity:0.85),EffectLayer(effect:.sharpen,intensity:0.25)]),
+        FXPreset(name:"Graphic Poster",layers:[EffectLayer(effect:.posterize,intensity:0.7),EffectLayer(effect:.saturation,intensity:0.8),EffectLayer(effect:.edges,intensity:0.15)]),
+        FXPreset(name:"Soft Portrait",layers:[EffectLayer(effect:.blur,intensity:0.08),EffectLayer(effect:.bloom,intensity:0.17),EffectLayer(effect:.temperature,intensity:0.57)]),
+        FXPreset(name:"Dark Drama",layers:[EffectLayer(effect:.exposure,intensity:0.35),EffectLayer(effect:.gloom,intensity:0.3),EffectLayer(effect:.vignette,intensity:0.45)]),
+        FXPreset(name:"Duotone Studio",layers:[EffectLayer(effect:.falseColor,intensity:0.8),EffectLayer(effect:.contrast,intensity:0.65)]),
+        FXPreset(name:"Retro Raster",layers:[EffectLayer(effect:.dotScreen,intensity:0.65),EffectLayer(effect:.monochrome,intensity:0.65)]),
+        FXPreset(name:"Neon Shift",layers:[EffectLayer(effect:.hue,intensity:0.72),EffectLayer(effect:.bloom,intensity:0.4),EffectLayer(effect:.saturation,intensity:0.8)]),
+        FXPreset(name:"Dream Zoom",layers:[EffectLayer(effect:.zoomBlur,intensity:0.28),EffectLayer(effect:.bloom,intensity:0.25)])
+    ]
+    func freshLayers()->[EffectLayer]{layers.map{var e=$0;e.id=UUID();return e}}
 }

@@ -124,6 +124,16 @@ enum EffectRenderer {
         var name="", params:[String:Any]=[:],clamp=false
         switch effect.effect {
         case .none:return image
+        case .falseColor:name="CIFalseColor";params=["inputColor0":CIColor(red:0.05,green:0.08,blue:0.22),"inputColor1":CIColor(red:1,green:0.64,blue:0.32)]
+        case .threshold:name="CIColorThreshold";params=["inputThreshold":a]
+        case .solarize:name="CIColorPolynomial";params=["inputRedCoefficients":CIVector(x:0,y:1+3*a,z:-3*a,w:0),"inputGreenCoefficients":CIVector(x:0,y:1+3*a,z:-3*a,w:0),"inputBlueCoefficients":CIVector(x:0,y:1+3*a,z:-3*a,w:0)]
+        case .mirrorX:
+            let flipped=image.transformed(by:CGAffineTransform(a:-1,b:0,c:0,d:1,tx:b.minX+b.maxX,ty:0))
+            return image.applyingFilter("CIDissolveTransition",parameters:["inputTargetImage":flipped,"inputTime":mix*a]).cropped(to:b)
+        case .mirrorY:
+            let flipped=image.transformed(by:CGAffineTransform(a:1,b:0,c:0,d:-1,tx:0,ty:b.minY+b.maxY))
+            return image.applyingFilter("CIDissolveTransition",parameters:["inputTargetImage":flipped,"inputTime":mix*a]).cropped(to:b)
+        case .kaleidoscope:name="CIKaleidoscope";params=["inputCount":3+round(a*9),"inputCenter":center]
         case .blur:name="CIGaussianBlur";params=["inputRadius":a*50];clamp=true
         case .sharpen:name="CISharpenLuminance";params=["inputSharpness":a*2]
         case .motionBlur:name="CIMotionBlur";params=["inputRadius":a*60,"inputAngle":angle];clamp=true
@@ -166,7 +176,7 @@ enum EffectRenderer {
         for (key,value) in params where filter.inputKeys.contains(key){filter.setValue(value,forKey:key)}
         guard let raw=filter.outputImage else{return image}
         let result=raw.cropped(to:b)
-        let fixed:[Effect]=[.median,.invert,.monochrome,.noir,.chrome,.fade,.instant,.process,.transfer,.comic]
+        let fixed:[Effect]=[.falseColor,.median,.invert,.monochrome,.noir,.chrome,.fade,.instant,.process,.transfer,.comic]
         let opacity=mix*(fixed.contains(effect.effect) ? a:1)
         if opacity>=0.9999{return result}
         return image.applyingFilter("CIDissolveTransition",parameters:["inputTargetImage":result,"inputTime":opacity]).cropped(to:b)

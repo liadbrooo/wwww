@@ -40,6 +40,9 @@ struct EffectStackPanel:View {
     let c:Clip
     @State private var search=""
     @State private var showLibrary=false
+    @State private var savedPresets:[FXPreset]=(try? JSONDecoder().decode([FXPreset].self,from:UserDefaults.standard.data(forKey:"LYRO.FXPresets") ?? Data())) ?? []
+    @State private var presetName=""
+    @State private var savePreset=false
     var stack:[EffectLayer]{c.effectStack}
     let groups=["Schärfe & Unschärfe","Licht & Farbe","Film & Stil","Verzerrung & Struktur"]
     var body:some View {
@@ -49,6 +52,7 @@ struct EffectStackPanel:View {
                 Spacer()
                 Button{showLibrary.toggle()}label:{Label("Effekte",systemImage:"plus.circle")}.buttonStyle(.bordered)
             }
+            presetMenu
             if showLibrary {library}
             if stack.isEmpty {Text("Kombiniere Effekte in beliebiger Reihenfolge.").font(.caption).foregroundStyle(.secondary)}
             ForEach(Array(stack.enumerated()),id:\.offset){index,layer in
@@ -57,6 +61,19 @@ struct EffectStackPanel:View {
             if !stack.isEmpty{Button("Alle Effekte entfernen"){e.edit(c.id){$0.effects=[];$0.effect=nil}}.font(.caption)}
         }
     }
+    var presetMenu:some View {
+        VStack(alignment:.leading,spacing:5){
+            Menu("Looks & Vorlagen"){
+                ForEach(FXPreset.builtIn){preset in Button(preset.name){applyPreset(preset)}}
+                if !savedPresets.isEmpty{Divider();ForEach(savedPresets){preset in Button(preset.name){applyPreset(preset)}}}
+                Divider()
+                Button("Aktuellen Stapel speichern…"){presetName="";savePreset=true}.disabled(stack.isEmpty)
+                if !savedPresets.isEmpty{Menu("Eigene Vorlagen löschen"){ForEach(savedPresets){preset in Button(preset.name,role:.destructive){savedPresets.removeAll{$0.id==preset.id};persistPresets()}}}}
+            }.menuStyle(.borderedButton)
+        }.alert("Effektvorlage speichern",isPresented:$savePreset){TextField("Name",text:$presetName);Button("Speichern"){let name=presetName.trimmingCharacters(in:.whitespacesAndNewlines);if !name.isEmpty{savedPresets.append(FXPreset(name:name,layers:stack));persistPresets()}};Button("Abbrechen",role:.cancel){}}
+    }
+    func applyPreset(_ preset:FXPreset){e.edit(c.id){$0.effects=$0.effectStack+preset.freshLayers()}}
+    func persistPresets(){if let data=try? JSONEncoder().encode(savedPresets){UserDefaults.standard.set(data,forKey:"LYRO.FXPresets")}}
     var library:some View {
         VStack(alignment:.leading,spacing:7){
             TextField("Effekte suchen",text:$search).textFieldStyle(.roundedBorder)

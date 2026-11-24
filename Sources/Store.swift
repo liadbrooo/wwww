@@ -357,19 +357,20 @@ import UniformTypeIdentifiers
         player.pause(); seek(0); fileURL = nil
         change { $0 = prefs.newProject() }
     }
-    func save(asNew: Bool = false) {
+    @discardableResult func save(asNew: Bool = false)->Bool {
         if fileURL == nil || asNew {
             let panel = NSSavePanel(); panel.nameFieldStringValue = project.name + ".lyrocut"
             panel.allowedContentTypes = [UTType(filenameExtension:"lyrocut") ?? .json]
-            guard panel.runModal() == .OK else { return }; fileURL = panel.url
+            guard panel.runModal() == .OK else { return false }; fileURL = panel.url
         }
-        guard let url = fileURL else { return }
+        guard let url = fileURL else { return false }
         do {
             var data = project; data.schemaVersion=1; data.name = url.deletingPathExtension().lastPathComponent
             try JSONEncoder().encode(data).write(to:url,options:.atomic)
-            project.name = data.name; changed(); status = "Gespeichert"
-        } catch { self.error = error.localizedDescription }
+            project.name = data.name; changed(); status = "Gespeichert";return true
+        } catch { self.error = error.localizedDescription;return false }
     }
+    func saveBeforeUpdate()->Bool {project.clips.isEmpty && project.media.isEmpty ? true:save()}
     func open() {
         let panel = NSOpenPanel(); panel.allowedContentTypes = [UTType(filenameExtension:"lyrocut") ?? .json]
         guard panel.runModal() == .OK,let url = panel.url else { return }
