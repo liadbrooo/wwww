@@ -4,7 +4,7 @@ import CoreImage
 import CoreText
 import AppKit
 
-func ct(_ seconds: Double) -> CMTime { CMTime(seconds: seconds, preferredTimescale: 600) }
+func ct(_ seconds: Double) -> CMTime { CMTime(seconds: seconds, preferredTimescale: 60000) }
 struct Layer {
     let clip: Clip
     let track: CMPersistentTrackID?
@@ -67,9 +67,10 @@ final class CutCompositor: NSObject, AVVideoCompositing {
                         }
                     }
                     if c.kind != .title {
-                        let amount = min(1,max(0,c.intensity ?? 0.5))
                         let bounds = image.extent
-                        switch c.effect ?? .none {
+                        for effect in c.effectStack {
+                        let amount = min(1,max(0,effect.intensity))
+                        switch effect.effect {
                         case .none: break
                         case .blur: image=image.clampedToExtent().applyingFilter("CIGaussianBlur",parameters:[kCIInputRadiusKey:amount*30]).cropped(to:bounds)
                         case .sharpen: image=image.applyingFilter("CISharpenLuminance",parameters:[kCIInputSharpnessKey:amount*2])
@@ -79,9 +80,13 @@ final class CutCompositor: NSObject, AVVideoCompositing {
                         case .edges: image=image.applyingFilter("CIEdges",parameters:[kCIInputIntensityKey:amount*8]).cropped(to:bounds)
                         case .noir: image=image.applyingFilter("CIPhotoEffectNoir")
                         }
+                        }
                         let maskSize=max(0.05,min(1,c.maskSize ?? 0.8))
                         if c.mask == .rectangle || c.mask == .ellipse {
-                            let box=bounds.insetBy(dx:bounds.width*(1-maskSize)/2,dy:bounds.height*(1-maskSize)/2)
+                            let aspect=max(0.1,min(3,c.maskAspect ?? 1))
+                            let mw=min(bounds.width,bounds.width*maskSize*aspect)
+                            let mh=min(bounds.height,bounds.height*maskSize)
+                            let box=CGRect(x:bounds.midX-mw/2+(c.maskX ?? 0)*bounds.width,y:bounds.midY-mh/2+(c.maskY ?? 0)*bounds.height,width:mw,height:mh)
                             if let context=CGContext(data:nil,width:Int(bounds.width),height:Int(bounds.height),bitsPerComponent:8,bytesPerRow:0,space:CGColorSpaceCreateDeviceRGB(),bitmapInfo:CGImageAlphaInfo.premultipliedLast.rawValue) {
                                 context.setFillColor(CGColor(gray:1,alpha:1))
                                 if c.mask == .ellipse {context.fillEllipse(in:box)} else {context.fill(box)}
@@ -192,7 +197,13 @@ enum Renderer {
                     try track.insertTimeRange(intersection,of:source,at:audioAt)
                     track.scaleTimeRange(CMTimeRange(start:audioAt,duration:intersection.duration),toDuration:ct(intersection.duration.seconds/c.speed))
                     let params = AVMutableAudioMixInputParameters(track:track)
-                    params.setVolume(Float(c.volume),at:audioAt)
+                    let audioLength=intersection.duration.seconds/c.speed
+                    let fi=max(0,min(audioLength/2,c.audioFadeIn ?? 0))
+                    let fo=max(0,min(audioLength/2,c.audioFadeOut ?? 0))
+                    let level=Float(c.volume)
+                    params.setVolume(fi>0 ? 0:level,at:audioAt)
+                    if fi>0 {params.setVolumeRamp(fromStartVolume:0,toEndVolume:level,timeRange:CMTimeRange(start:audioAt,duration:ct(fi)))}
+                    if fo>0 {params.setVolumeRamp(fromStartVolume:level,toEndVolume:0,timeRange:CMTimeRange(start:CMTimeAdd(audioAt,ct(audioLength-fo)),duration:ct(fo)))}
                     audioParameters.append(params)
                 }
             }
@@ -211,12 +222,15 @@ enum Renderer {
         audio.inputParameters = audioParameters
         return RenderGraph(composition:comp,video:video,audio:audio)
     }
-    static func export(_ graph: RenderGraph,to url: URL) async throws {
-        guard let session = AVAssetExportSession(asset:graph.composition,presetName:AVAssetExportPresetHighestQuality) else { throw RenderError.invalid("Export") }
+    static func export(_ graph: RenderGraph,to url: URL,format:ExportFormat = .mp4,onSession:((AVAssetExportSession)->Void)? = nil) async throws {
+        let preset=format == .proRes ? AVAssetExportPresetAppleProRes422LPCM : AVAssetExportPresetHighestQuality
+        guard let session = AVAssetExportSession(asset:graph.composition,presetName:preset) else { throw RenderError.invalid("Export") }
         session.videoComposition = graph.video
         session.audioMix = graph.audio
         session.outputURL = url
-        session.outputFileType = .mp4
+        session.outputFileType = format == .mp4 ? .mp4 : .mov
+        guard session.supportedFileTypes.contains(session.outputFileType!) else {throw RenderError.invalid("Exportformat")}
+        onSession?(session)
         session.shouldOptimizeForNetworkUse = true
         await withCheckedContinuation { (continuation: CheckedContinuation<Void,Never>) in
             session.exportAsynchronously { continuation.resume() }

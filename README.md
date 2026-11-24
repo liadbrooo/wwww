@@ -22,3 +22,6 @@ This is the first implementation. Preview/export, codecs, performance and intera
 Source aspect ratio and frame rate, UHD option, drag media into timeline, same-lane clip swapping, trim handles, seven video effects, basic rectangle/ellipse masks, editable keyframe curves (position, scale, rotation, opacity), custom icon and DMG. Existing projects load with optional defaults. Tracking, automatic captions and audio waveform analysis are not part of this revision.
 
 Waveforms are calculated from decoded audio locally; scene suggestions use sampled frame differences and can miss cuts. UHD resolution and fractional source frame rates are covered by model tests; the end-to-end MP4 test still exports HD.
+
+## 0.3.0
+Native vector recreation of the new glass L / timeline identity and redesigned DMG. Export panel (MP4/MOV/ProRes, resolution, FPS, progress and cancellation), stacked effects, editable mask placement and aspect, audio fades, corrected fractional FPS snapping, source format restoration, keyframe-aware transform editing and insertion/swap improvements. Existing projects remain decodable. UHD export is checked with a real exported file in CI. UI interaction and ProRes still need manual testing. No speech recognition or object tracking yet.

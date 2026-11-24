@@ -11,6 +11,12 @@ import UniformTypeIdentifiers
     @Published var playing = false
     @Published var error: String?
     @Published var busy = false
+    @Published var exportOptions = false
+    @Published var exportProgress: Double = 0
+    @Published var snapping = true
+    @Published var swapping = true
+    private var exportSession: AVAssetExportSession?
+    private var cancelRequested=false
     @Published var status = "Bereit"
     @Published var zoom: Double = 48
     @Published var waveforms: [UUID:[Double]] = [:]
@@ -32,7 +38,7 @@ import UniformTypeIdentifiers
         observer = player.addPeriodicTimeObserver(forInterval:ct(1.0/30),queue:.main) { [weak self] time in
             Task { @MainActor in
                 guard let self = self else { return }
-                self.playhead = time.seconds.isFinite ? time.seconds : 0
+                if self.player.currentItem != nil && self.player.rate != 0 {self.playhead = time.seconds.isFinite ? time.seconds : 0}
                 self.playing = self.player.rate != 0
             }
         }
@@ -57,6 +63,7 @@ import UniformTypeIdentifiers
         if lastEdit?.0 != id || Date().timeIntervalSince(lastEdit?.1 ?? .distantPast) > 0.7 { record() }
         lastEdit = (id,Date())
         work(&project.clips[index])
+        suggestions.removeValue(forKey:id)
         changed()
     }
     func undo() {
@@ -164,11 +171,19 @@ import UniformTypeIdentifiers
     }
     func add(_ media: Media, at position: Double? = nil, lane requested: Int? = nil) {
         let lane = media.kind == .audio ? max(-2,min(-1,requested ?? -1)) : max(0,min(2,requested ?? 0))
-        let start = position.map{max(0,($0*project.frameRate).rounded()/project.frameRate)} ?? project.clips.filter{$0.lane == lane}.map(\.end).max() ?? 0
+        let start = position.map{max(0,project.snap($0))} ?? project.clips.filter{$0.lane == lane}.map(\.end).max() ?? 0
         let clip = Clip(mediaID:media.id,name:media.name,kind:media.kind,start:start,length:media.duration,lane:lane)
         change { p in
             if media.kind == .video && !p.clips.contains(where:{$0.kind == .video}) {p.useSource(media)}
-            p.clips.append(clip)
+            var inserted=clip
+            // Same-track media drops insert into the sequence instead of silently hiding clips.
+            if let overlap=p.clips.first(where:{$0.lane==lane && inserted.start>$0.start && inserted.start<$0.end}) {
+                inserted.start=inserted.start-overlap.start<overlap.length/2 ? overlap.start:overlap.end
+            }
+            if position != nil {
+                for i in p.clips.indices where p.clips[i].lane==lane && p.clips[i].start>=inserted.start-0.00001 {p.clips[i].start+=inserted.length}
+            }
+            p.clips.append(inserted)
         }; selected = clip.id
     }
     func addTitle() {
@@ -199,16 +214,22 @@ import UniformTypeIdentifiers
         guard let c = project.clips.first(where:{$0.id == id}) else { return }
         var destination = max(0,time)
         let edges: [Double] = project.clips.filter{$0.id != id}.flatMap{ (clip: Clip) -> [Double] in [clip.start,clip.end] } + [playhead,0.0]
-        if let edge = edges.min(by:{abs($0-destination)<abs($1-destination)}), abs(edge-destination) < 8/zoom { destination = edge }
-        else { destination = (destination*project.frameRate).rounded()/Double(project.fps) }
+        let candidates=edges.flatMap{[$0,$0-c.length]}.filter{$0>=0}
+        if snapping,let edge = candidates.min(by:{abs($0-destination)<abs($1-destination)}), abs(edge-destination) < 8/zoom { destination = edge }
+        else { destination = project.snap(destination) }
         let targetLane=c.kind == .audio ? max(-2,min(-1,lane)) : max(0,min(2,lane))
         let swap=project.clips.first{$0.id != id && $0.lane == targetLane && destination+c.length/2 >= $0.start && destination+c.length/2 < $0.end}
         change { p in
             if let i=p.clips.firstIndex(where:{$0.id==id}) {
-                if let other=swap,c.lane==targetLane,let j=p.clips.firstIndex(where:{$0.id==other.id}) {
+                if swapping,let other=swap,c.lane==targetLane,let j=p.clips.firstIndex(where:{$0.id==other.id}) {
                     let left=min(c.start,other.start)
-                    if c.start<other.start {p.clips[j].start=left;p.clips[i].start=left+other.length}
-                    else {p.clips[i].start=left;p.clips[j].start=left+c.length}
+                    let right=max(c.start,other.start)
+                    let gap=max(0,right-left-(c.start<other.start ? c.length:other.length))
+                    if c.start<other.start {p.clips[j].start=left;p.clips[i].start=left+other.length+gap}
+                    else {p.clips[i].start=left;p.clips[j].start=left+c.length+gap}
+                    for k in p.clips.indices where k != i && k != j && p.clips[k].lane==targetLane && p.clips[k].start>left && p.clips[k].start<right {
+                        p.clips[k].start=max(0,p.clips[k].start+(c.start<other.start ? other.length-c.length:c.length-other.length))
+                    }
                 } else {p.clips[i].start=destination;p.clips[i].lane=targetLane}
             }
         }
@@ -222,21 +243,40 @@ import UniformTypeIdentifiers
                 let lower=max(-c.start,-c.sourceIn/c.speed)
                 let d=max(lower,min(c.length-frame,amount))
                 clip.start=c.start+d;clip.sourceIn=c.sourceIn+d*c.speed;clip.length=c.length-d
-                if let points=c.keyframes {clip.keyframes=points.map{p in var q=p;q.time=max(0,p.time-d);return q}.filter{$0.time<=clip.length}}
+                if let points=c.keyframes,!points.isEmpty {
+                    var boundary=c.pose(at:max(0,d));boundary.id=UUID();boundary.time=0
+                    clip.keyframes=[boundary]+points.filter{$0.time>d}.map{p in var q=p;q.time-=d;return q}.filter{$0.time<=clip.length}
+                }
             } else {
                 let limit=media.map{max(frame,($0.duration-c.sourceIn)/c.speed)} ?? 3600
                 clip.length=max(frame,min(limit,c.length+amount))
-                clip.keyframes=clip.keyframes?.filter{$0.time<=clip.length}
+                if let points=c.keyframes,!points.isEmpty {
+                    var boundary=c.pose(at:clip.length);boundary.id=UUID();boundary.time=clip.length
+                    clip.keyframes=points.filter{$0.time<clip.length}+[boundary]
+                }
             }
         }
     }
     func addKeyframe(_ c:Clip) {
         let time=min(c.length,max(0,playhead-c.start))
         edit(c.id) {clip in
-            var points=clip.keyframes ?? []
-            points.removeAll{abs($0.time-time)<0.5/project.frameRate}
-            points.append(Keyframe(time:time,scale:clip.scale,x:clip.x,y:clip.y,rotation:clip.rotation,opacity:clip.opacity))
-            clip.keyframes=points.sorted{$0.time<$1.time}
+            clip.setPose(clip.pose(at:time),at:time,fps:project.frameRate)
+        }
+    }
+    func editPose(_ c:Clip,key:WritableKeyPath<Clip,Double>,value:Double) {
+        let t=max(0,min(c.length,playhead-c.start))
+        let rate=project.frameRate
+        edit(c.id){clip in
+            clip[keyPath:key]=value
+            guard !(clip.keyframes ?? []).isEmpty else{return}
+            var pose=clip.pose(at:t)
+            if key == \.scale {pose.scale=value}
+            else if key == \.x {pose.x=value}
+            else if key == \.y {pose.y=value}
+            else if key == \.rotation {pose.rotation=value}
+            else if key == \.opacity {pose.opacity=value}
+            else {return}
+            clip.setPose(pose,at:t,fps:rate)
         }
     }
     func analyzeCuts(_ c:Clip) {
@@ -282,22 +322,43 @@ import UniformTypeIdentifiers
         } catch { self.error = error.localizedDescription }
     }
     func export() {
-        guard !busy else { return }
-        let panel = NSSavePanel(); panel.allowedContentTypes = [.mpeg4Movie]; panel.nameFieldStringValue = project.name + ".mp4"
-        guard panel.runModal() == .OK,let url = panel.url else { return }
-        let snapshot = project
-        busy = true; status = "Export läuft…"; player.pause()
+        guard !busy,project.clips.contains(where:{$0.kind == .video}) else{return}
+        exportOptions=true
+    }
+    func cancelExport() {
+        cancelRequested=true
+        exportSession?.cancelExport()
+        status="Export wird abgebrochen…"
+    }
+    func performExport(format:ExportFormat,uhd:Bool,fps:Int?) {
+        guard !busy else{return}
+        exportOptions=false
+        var snapshot=project
+        snapshot.ultraHD=uhd
+        if let fps=fps {snapshot.setFPS(fps)}
+        let panel=NSSavePanel()
+        panel.allowedContentTypes=[format == .mp4 ? .mpeg4Movie:.quickTimeMovie]
+        panel.nameFieldStringValue=project.name+"."+format.suffix
+        guard panel.runModal() == .OK,let url=panel.url else{return}
+        busy=true;exportProgress=0;cancelRequested=false;status="Export läuft…";player.pause()
         Task {
-            let temp = url.deletingLastPathComponent().appendingPathComponent(".lyro-" + UUID().uuidString + ".mp4")
-            defer { busy = false; try? FileManager.default.removeItem(at:temp) }
+            let temp=url.deletingLastPathComponent().appendingPathComponent(".lyro-"+UUID().uuidString+"."+format.suffix)
+            let monitor=Task {
+                while !Task.isCancelled {
+                    if let session=exportSession {exportProgress=Double(session.progress)}
+                    try? await Task.sleep(nanoseconds:150_000_000)
+                }
+            }
+            defer {monitor.cancel();exportSession=nil;busy=false;try? FileManager.default.removeItem(at:temp)}
             do {
-                let graph = try await Renderer.build(snapshot)
-                try await Renderer.export(graph,to:temp)
-                if FileManager.default.fileExists(atPath:url.path) {
-                    _ = try FileManager.default.replaceItemAt(url,withItemAt:temp)
-                } else { try FileManager.default.moveItem(at:temp,to:url) }
-                status = "Export abgeschlossen"; NSWorkspace.shared.activateFileViewerSelecting([url])
-            } catch { self.error = error.localizedDescription; status = "Export fehlgeschlagen" }
+                let graph=try await Renderer.build(snapshot)
+                if cancelRequested {status="Export abgebrochen";return}
+                try await Renderer.export(graph,to:temp,format:format,onSession:{session in self.exportSession=session})
+                if cancelRequested {status="Export abgebrochen";return}
+                if FileManager.default.fileExists(atPath:url.path) {_ = try FileManager.default.replaceItemAt(url,withItemAt:temp)}
+                else {try FileManager.default.moveItem(at:temp,to:url)}
+                exportProgress=1;status="Export abgeschlossen";NSWorkspace.shared.activateFileViewerSelecting([url])
+            } catch {if cancelRequested {status="Export abgebrochen"} else {self.error=error.localizedDescription;status="Export fehlgeschlagen"}}
         }
     }
 }

@@ -6,6 +6,15 @@ enum Look: String, Codable, CaseIterable { case original, monochrome, warm, cool
 enum Motion: String, Codable, CaseIterable { case none, zoomIn, zoomOut, slideLeft, slideRight }
 enum Effect: String, Codable, CaseIterable { case none, blur, sharpen, vignette, pixelate, bloom, edges, noir }
 enum Mask: String, Codable, CaseIterable { case none, rectangle, ellipse }
+enum ExportFormat: String, CaseIterable { case mp4, mov, proRes
+    var suffix:String { self == .mp4 ? "mp4":"mov" }
+    var title:String { switch self {case .mp4:return "MP4 · H.264 / kompatibel";case .mov:return "MOV · hohe Qualität";case .proRes:return "MOV · Apple ProRes 422"} }
+}
+struct EffectLayer: Identifiable, Codable, Equatable {
+    var id=UUID()
+    var effect:Effect
+    var intensity:Double=0.5
+}
 enum Ease: String, Codable, CaseIterable { case linear, smooth, easeIn, easeOut }
 struct Keyframe: Identifiable, Codable, Equatable {
     var id = UUID()
@@ -66,6 +75,21 @@ struct Clip: Identifiable, Codable, Equatable {
     var maskSize: Double? = nil
     var fill: Bool? = nil
     var keyframes: [Keyframe]? = nil
+    var effects: [EffectLayer]? = nil
+    var maskX: Double? = nil
+    var maskY: Double? = nil
+    var maskAspect: Double? = nil
+    var audioFadeIn: Double? = nil
+    var audioFadeOut: Double? = nil
+    var effectStack: [EffectLayer] { effects ?? ((effect ?? Effect.none) == Effect.none ? [] : [EffectLayer(effect:effect ?? Effect.none,intensity:intensity ?? 0.5)]) }
+    mutating func setPose(_ pose:Keyframe,at time:Double,fps:Double) {
+        var points=keyframes ?? []
+        var next=pose
+        next.time=max(0,min(length,time))
+        if let i=points.firstIndex(where:{abs($0.time-next.time)<0.5/fps}) {next.id=points[i].id;next.ease=points[i].ease;points[i]=next}
+        else {points.append(next)}
+        keyframes=points.sorted{$0.time<$1.time}
+    }
     var end: Double { start + length }
     func pose(at time: Double) -> Keyframe {
         let base = Keyframe(time:0,scale:scale,x:x,y:y,rotation:rotation,opacity:opacity)
@@ -102,6 +126,10 @@ struct Project: Codable, Equatable {
         return CGSize(width:max(2,(long*ratio/2).rounded()*2),height:long)
     }
     var frameRate: Double { sourceFPS ?? Double(fps) }
+    func snap(_ seconds:Double)->Double { (seconds*frameRate).rounded()/frameRate }
+    mutating func setSourceFormat() {
+        if let media=media.first(where:{$0.kind == .video}) {useSource(media)}
+    }
     mutating func useSource(_ media: Media) {
         if let w=media.width,let h=media.height,w>0,h>0 {
             sourceCanvasWidth=w;sourceCanvasHeight=h
@@ -119,7 +147,8 @@ struct Project: Codable, Equatable {
         guard let index = clips.firstIndex(where: {$0.id == id}) else { return nil }
         var right = clips[index]
         let offset = time - right.start
-        guard offset > 0.04, offset < right.length - 0.04 else { return nil }
+        let minimum=0.5/frameRate
+        guard offset > minimum, offset < right.length - minimum else { return nil }
         right.id = UUID()
         right.start = time
         right.sourceIn += offset * right.speed

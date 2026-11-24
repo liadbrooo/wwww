@@ -90,12 +90,17 @@ struct Workspace: View {
             HStack(spacing:8) {
                 Circle().fill(e.busy ? Color.orange : Color.green).frame(width:6,height:6)
                 Text(e.status).lineLimit(1)
+                if e.busy {
+                    ProgressView(value:e.exportProgress).frame(width:100)
+                    Button("Abbrechen"){e.cancelExport()}.buttonStyle(.plain)
+                }
                 Spacer()
                 Text("LOKAL  ·  " + e.project.canvas.rawValue + "  ·  " + String(e.project.fps) + " FPS")
-                Text("v0.2.0").foregroundStyle(.tertiary)
+                Text("v0.3.0").foregroundStyle(.tertiary)
             }.font(.system(size:11,weight:.medium)).foregroundStyle(.secondary).padding(.horizontal,14).frame(height:27).background(panel)
         }.background(bg)
         .tint(accent)
+        .sheet(isPresented:$e.exportOptions){ExportPanel(e:e)}
         .alert("LYRO Cut",isPresented:Binding(get:{e.error != nil},set:{if !$0 {e.error = nil}})) {
             Button("OK") {e.error = nil}
         } message: { Text(e.error ?? "") }
@@ -214,7 +219,16 @@ struct Inspector: View {
     func control(_ name:String,_ key:WritableKeyPath<Clip,Double>,_ c:Clip,_ range:ClosedRange<Double>,_ step:Double = 0.01) -> some View {
         VStack(alignment:.leading,spacing:4) {
             HStack {Text(name); Spacer(); Text(String(format:"%.2f",e.current?[keyPath:key] ?? c[keyPath:key])).monospacedDigit().foregroundStyle(.secondary)}
-            Slider(value:bind(key,c),in:range,step:step)
+            Slider(value:Binding<Double>(get:{
+                let clip=e.current ?? c
+                let pose=clip.pose(at:max(0,e.playhead-clip.start))
+                if key == \.scale {return pose.scale}
+                if key == \.x {return pose.x}
+                if key == \.y {return pose.y}
+                if key == \.rotation {return pose.rotation}
+                if key == \.opacity {return pose.opacity}
+                return clip[keyPath:key]
+            },set:{v in e.editPose(c,key:key,value:v)}),in:range,step:step)
         }.font(.system(size:11))
     }
     func heading(_ text:String) -> some View {Text(text.uppercased()).font(.system(size:10,weight:.semibold)).tracking(0.8).foregroundStyle(.secondary).padding(.top,7)}
@@ -259,6 +273,7 @@ struct Inspector: View {
             if let rate=e.project.sourceFPS {Text(String(format:"Originalbildrate %.3f FPS",rate)).font(.caption).foregroundStyle(.secondary)}
             Toggle("4K / UHD Export",isOn:uhd)
             Text(outputLabel).font(.caption).foregroundStyle(.secondary)
+            Button("Quellformat wiederherstellen"){e.change{$0.setSourceFormat()}}.disabled(e.project.media.isEmpty)
             Picker("Bildformat",selection:format) {ForEach(Canvas.allCases,id:\.self){Text($0.rawValue).tag($0)}}
             Picker("Bildrate",selection:fps) {ForEach([24,25,30,50,60],id:\.self){Text("\($0) fps").tag($0)}}
             Text("Wähle einen Clip aus, um seine Eigenschaften zu bearbeiten.").font(.caption).foregroundStyle(.secondary)
@@ -326,20 +341,29 @@ struct Inspector: View {
         Text("Überlappe Clips auf V1 und V2 und blende V2 ein, um eine Überblendung zu erzeugen.").font(.caption).foregroundStyle(.secondary)
     }
     @ViewBuilder func effectControls(_ c:Clip) -> some View {
-        heading("Videoeffekt")
-        Picker("Effekt",selection:Binding<Effect>(get:{c.effect ?? Effect.none},set:{v in e.edit(c.id){$0.effect=v}})) {
-            ForEach(Effect.allCases,id:\.self){Text($0.rawValue.capitalized).tag($0)}
-        }
-        Slider(value:Binding(get:{c.intensity ?? 0.5},set:{v in e.edit(c.id){$0.intensity=v}}),in:0...1)
+        EffectStackPanel(e:e,c:c)
         heading("Maske")
         Picker("Form",selection:Binding<Mask>(get:{c.mask ?? Mask.none},set:{v in e.edit(c.id){$0.mask=v}})){
             ForEach(Mask.allCases,id:\.self){Text($0.rawValue.capitalized).tag($0)}
         }
-        Slider(value:Binding(get:{c.maskSize ?? 0.8},set:{v in e.edit(c.id){$0.maskSize=v}}),in:0.05...1)
+        if c.mask != nil && c.mask != Mask.none {
+            Text("Größe").font(.caption)
+            Slider(value:Binding(get:{c.maskSize ?? 0.8},set:{v in e.edit(c.id){$0.maskSize=v}}),in:0.05...1)
+            Text("Horizontal").font(.caption)
+            Slider(value:Binding(get:{c.maskX ?? 0},set:{v in e.edit(c.id){$0.maskX=v}}),in:-0.5...0.5)
+            Text("Vertikal").font(.caption)
+            Slider(value:Binding(get:{c.maskY ?? 0},set:{v in e.edit(c.id){$0.maskY=v}}),in:-0.5...0.5)
+            Text("Breite").font(.caption)
+            Slider(value:Binding(get:{c.maskAspect ?? 1},set:{v in e.edit(c.id){$0.maskAspect=v}}),in:0.1...3)
+        }
     }
     @ViewBuilder func audioControls(_ c:Clip) -> some View {
         heading("Lautstärke")
         control("Pegel",\.volume,c,0...1)
+        Text("Audio einblenden").font(.caption)
+        Slider(value:Binding(get:{c.audioFadeIn ?? 0},set:{v in e.edit(c.id){$0.audioFadeIn=v}}),in:0...max(0.01,c.length/2))
+        Text("Audio ausblenden").font(.caption)
+        Slider(value:Binding(get:{c.audioFadeOut ?? 0},set:{v in e.edit(c.id){$0.audioFadeOut=v}}),in:0...max(0.01,c.length/2))
         Button("Stummschalten"){e.edit(c.id){$0.volume=0}}
         Button("Originalpegel"){e.edit(c.id){$0.volume=1}}
     }
@@ -360,6 +384,8 @@ struct Timeline: View {
                 Divider().frame(height:19)
                 Tool(symbol:"textformat",help:"Titel"){e.addTitle()}
                 Spacer()
+                Toggle("Magnet",isOn:$e.snapping).toggleStyle(.button).help("Magnetisches Einrasten")
+                Toggle("Tauschen",isOn:$e.swapping).toggleStyle(.button).help("Clips beim Verschieben tauschen")
                 Image(systemName:"minus.magnifyingglass").foregroundStyle(.secondary)
                 Slider(value:$e.zoom,in:12...160).frame(width:100)
                 Image(systemName:"plus.magnifyingglass").foregroundStyle(.secondary)

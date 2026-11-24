@@ -85,6 +85,14 @@ import AppKit
         let portrait=try await Renderer.build(p)
         guard portrait.video.renderSize==CGSize(width:2160,height:3840),
               abs(portrait.video.frameDuration.seconds-0.04)<0.000001 else {throw RenderError.invalid("UHD format / fps")}
+        let uhdURL=dir.appendingPathComponent("uhd.mp4")
+        try await Renderer.export(portrait,to:uhdURL)
+        let uhdAsset=AVURLAsset(url:uhdURL)
+        guard let uhdTrack=try await uhdAsset.loadTracks(withMediaType:.video).first else{throw RenderError.invalid("UHD output")}
+        let uhdSize=try await uhdTrack.load(.naturalSize)
+        let uhdFPS=try await uhdTrack.load(.nominalFrameRate)
+        guard uhdSize==CGSize(width:2160,height:3840),abs(uhdFPS-25)<0.1 else{throw RenderError.invalid("UHD export metadata")}
+        print("Actual UHD export passed")
         print("Real AVFoundation import, composition, title, motion, color effect and MP4 export passed")
     }
 }
