@@ -6,3 +6,6 @@ Professional frame-based ripple, roll, slip and slide with atomic validation, sa
 
 ## 0.5.1 Settings
 Persistent project defaults, source matching, track density, snap distance, undo limit, preview cap, export preferences, optional local recovery and keyboard reference. Browser codec availability still determines supported export types.
+
+## 0.6.0 Color & FX
+29 Canvas effects, categorized search and editable ordered stack with strength, mix, enable/bypass, detail and angle where applicable. Cross-platform supported effect IDs are portable; renderer appearance can differ. Advanced settings for projects, FX, monitoring, performance and export. Effects use the same canvas for preview and realtime export; heavy CPU filters may affect frame pacing.

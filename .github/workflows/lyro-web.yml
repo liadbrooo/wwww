@@ -12,7 +12,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - run: node --check web/app.js && node --check web/core.js && node web/core.test.cjs
+      - run: node --check web/app.js && node --check web/effects.js && node --check web/preferences.js && node --check web/core.js && node web/core.test.cjs
       - run: npm install --no-save playwright
         working-directory: web
       - run: npx playwright install --with-deps chromium
@@ -21,4 +21,6 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: LYRO-Cut-Web-Studio-preview
-          path: web/studio.png
+          path: |
+            web/studio.png
+            web/settings.png
