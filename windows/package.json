@@ -1,0 +1,11 @@
+{
+  "name": "lyro-cut-windows",
+  "version": "0.7.0",
+  "private": true,
+  "scripts": {
+    "build": "tauri build"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "2.11.0"
+  }
+}
