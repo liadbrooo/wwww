@@ -1,0 +1,1 @@
+# LYRO Cut Web 0.1.0\nIndependent browser editor. Local files and IndexedDB autosave; no upload or backend. Canvas preview + Web Audio mix + MediaRecorder real-time export. MP4 if supported, otherwise WebM. 4K experimental; browser codecs, filter support, frame pacing and memory limits vary. Not binary-compatible with native projects. Serve this folder as static site.\n
