@@ -28,6 +28,7 @@ jobs:
           npm install
           node prepare.mjs
           node --check dist/desktop.js
+          node --check dist/updates.js
           node --check dist/app.js
       - name: Install test encoder
         shell: pwsh
@@ -44,27 +45,36 @@ jobs:
       - name: Build Windows x64 installer
         working-directory: windows
         run: npm run build
+      - name: Verify compiled Windows executable
+        shell: pwsh
+        run: |
+          $exe = Get-Item windows/src-tauri/target/release/lyro-cut.exe
+          if ($exe.Length -lt 100000) { throw "Invalid Windows executable" }
+          $stream = [System.IO.File]::OpenRead($exe.FullName)
+          try {
+            if ($stream.ReadByte() -ne 77 -or $stream.ReadByte() -ne 90) { throw "Invalid PE signature" }
+          } finally { $stream.Dispose() }
       - name: Prepare Windows packages
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force release
           $setup = Get-ChildItem windows/src-tauri/target/release/bundle/nsis/*-setup.exe | Select-Object -First 1
           if (!$setup) { throw "NSIS installer missing" }
-          Copy-Item $setup.FullName release/LYRO-Cut-0.7.0-Windows-x64-Setup.exe
-          Compress-Archive -Path windows/src-tauri/target/release/lyro-cut.exe -DestinationPath release/LYRO-Cut-0.7.0-Windows-x64-Portable.zip
+          Copy-Item $setup.FullName release/LYRO-Cut-0.7.1-Windows-x64-Setup.exe
+          Compress-Archive -Path windows/src-tauri/target/release/lyro-cut.exe -DestinationPath release/LYRO-Cut-0.7.1-Windows-x64-Portable.zip
           Get-ChildItem release -File | ForEach-Object { "$((Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower())  $($_.Name)" | Out-File -Encoding ascii -Append release/SHA256SUMS.txt }
       - uses: actions/upload-artifact@v4
         with:
-          name: LYRO-Cut-0.7.0-Windows-x64
+          name: LYRO-Cut-0.7.1-Windows-x64
           path: release/*
           if-no-files-found: error
-      - name: Publish Windows Foundation release
+      - name: Publish Windows Foundation update release
         env:
           GH_TOKEN: ${{ github.token }}
         shell: pwsh
         run: |
-          gh release view lyro-cut-windows-v0.7.0 2>$null
+          gh release view lyro-cut-windows-v0.7.1 2>$null
           if ($LASTEXITCODE -ne 0) {
-            gh release create lyro-cut-windows-v0.7.0 --target $env:GITHUB_SHA --title "LYRO Cut Windows 0.7.0" --notes "Windows Foundation. Native FFmpeg export requires separately installed FFmpeg. Unsigned preview build." release/LYRO-Cut-0.7.0-Windows-x64-Setup.exe release/LYRO-Cut-0.7.0-Windows-x64-Portable.zip release/SHA256SUMS.txt
+            gh release create lyro-cut-windows-v0.7.1 --target $env:GITHUB_SHA --title "LYRO Cut Windows 0.7.1" --notes "Windows Foundation with integrated SHA-256 verified updater. Native FFmpeg export requires separately installed FFmpeg. Unsigned preview build." release/LYRO-Cut-0.7.1-Windows-x64-Setup.exe release/LYRO-Cut-0.7.1-Windows-x64-Portable.zip release/SHA256SUMS.txt
             if ($LASTEXITCODE -ne 0) { throw "Release failed" }
           }

@@ -1,5 +1,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 mod engine;
+mod updater;
 use serde::Serialize;
 use std::{collections::HashMap,path::PathBuf};
 #[derive(Serialize)]
@@ -28,6 +29,6 @@ async fn native_export(request:engine::ExportRequest)->Result<String,String>{
     }).await.map_err(|e|e.to_string())?
 }
 fn main(){
-    tauri::Builder::default().invoke_handler(tauri::generate_handler![engine_status,native_export])
+    tauri::Builder::default().invoke_handler(tauri::generate_handler![engine_status,native_export,updater::check_update,updater::install_update])
       .run(tauri::generate_context!()).expect("LYRO Cut konnte nicht gestartet werden");
 }

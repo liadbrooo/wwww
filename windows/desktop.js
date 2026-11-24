@@ -6,7 +6,7 @@ button.onclick=async()=>{
  if(exporting)return;
  const clips=[...project.clips].sort((a,b)=>a.start-b.start);
  if(!clips.length)return tell("Füge Videoclips zur Timeline hinzu.");
- let end=0;for(const c of clips){if(incompatible(c)||Math.abs(c.start-end)>.002||hidden(c.lane))return tell("Native Export 0.7.0 unterstützt lückenlose, unveränderte Videoclips auf V1 mit Trimmen, Grundfarben und Lautstärke. Für Titel, Effekte, Animationen oder mehrere Spuren nutze den normalen Export.");end=c.start+c.length}
+ let end=0;for(const c of clips){if(incompatible(c)||Math.abs(c.start-end)>.002||hidden(c.lane))return tell("Native Export 0.7.1 unterstützt lückenlose, unveränderte Videoclips auf V1 mit Trimmen, Grundfarben und Lautstärke. Für Titel, Effekte, Animationen oder mehrere Spuren nutze den normalen Export.");end=c.start+c.length}
  const details=await invoke("engine_status").catch(e=>({ready:false,message:String(e)}));
  if(!details.ready)return tell("FFmpeg und FFprobe fehlen. Installiere FFmpeg z. B. mit winget install Gyan.FFmpeg, starte LYRO Cut neu und versuche es erneut. Alternativ: normaler Export.");
  const choice=prompt("Native Export: Auflösung wählen (1080 oder 2160)", "1080");if(choice===null)return;if(!["1080","2160"].includes(choice))return tell("Wähle 1080 oder 2160.");
@@ -18,5 +18,5 @@ button.onclick=async()=>{
  catch(e){tell("Native Export: "+String(e))}
  finally{exporting=false;panel.hidden=true;cancel.hidden=false;document.getElementById("bar").value=0;render()}
 };
-const nav=document.getElementById("settingsNav");document.getElementById("settings").addEventListener("click",async()=>{const d=await invoke("engine_status").catch(e=>({ready:false,message:String(e)}));const old=document.getElementById("desktopEngineInfo");if(old)old.remove();const info=document.createElement("div");info.id="desktopEngineInfo";info.className="desktopInfo";info.textContent="Windows 0.7.0 · Rust / Tauri · "+(d.ready?"FFmpeg verfügbar":"FFmpeg optional installieren");document.querySelector(".settingsShell>aside").append(info)});
+const nav=document.getElementById("settingsNav");document.getElementById("settings").addEventListener("click",async()=>{const d=await invoke("engine_status").catch(e=>({ready:false,message:String(e)}));const old=document.getElementById("desktopEngineInfo");if(old)old.remove();const info=document.createElement("div");info.id="desktopEngineInfo";info.className="desktopInfo";info.textContent="Windows 0.7.1 · Rust / Tauri · "+(d.ready?"FFmpeg verfügbar":"FFmpeg optional installieren");document.querySelector(".settingsShell>aside").append(info)});
 })();
