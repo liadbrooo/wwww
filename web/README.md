@@ -3,3 +3,6 @@
 Mac-inspired workspace, resizable panels, persistent layout widths, workspace modes, dynamic tracks, locks/mute/visibility, markers, multi-select/group moves and shared .lyrocut format v1. Unsupported effects and image/demo projects are rejected by the interchange adapter; .lyroweb is still supported. Native and browser render engines remain distinct. Export is still browser real-time MediaRecorder.\n
 ## 0.5.0
 Professional frame-based ripple, roll, slip and slide with atomic validation, same-track cross-dissolves, and shared editing tests. Multicam, proxy workflows, nested sequences and deterministic frame-by-frame export remain pending.
+
+## 0.5.1 Settings
+Persistent project defaults, source matching, track density, snap distance, undo limit, preview cap, export preferences, optional local recovery and keyboard reference. Browser codec availability still determines supported export types.
