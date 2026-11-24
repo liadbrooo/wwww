@@ -7,3 +7,6 @@ Build on Windows with Node 22, Rust stable, Visual Studio C++ build tools, Pytho
 
 ## 0.7.1 — Windows Updater
 Update settings, automatic checks at startup and configured intervals while running, semantic version selection of stable Windows releases only, native HTTPS download, SHA-256 and expected release size verification, native project backup dialog before installer launch. Normal interactive NSIS setup is launched and the editor exits. No Authenticode or independent signed manifest yet; trust relies on GitHub release publishing. Portable builds transition to installed edition via setup; direct portable self-replacement is not implemented. Full upgrade cycle requires a subsequent Windows release and real machine testing.
+
+## 0.7.2 — Windows Hardware & Export
+Native export dialog, 720p/1080p/UHD, H.264 encoder selection (CPU, NVIDIA NVENC, Intel QSV, AMD AMF, auto), bounded real test encoding before selection, encoder-specific quality parameters, AAC bitrate, segment progress and cancellation. Native FFmpeg remains optional and single-track limited. Actual GPU compatibility depends on drivers/hardware and must be tested on the target PC. GPU effects and hardware decoding are not implemented. Release pipeline retained from verified 0.7.1.

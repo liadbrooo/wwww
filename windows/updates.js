@@ -1,7 +1,7 @@
 "use strict";
 (()=>{
 const invoke=window.__TAURI__?.core?.invoke;if(!invoke)return;
-const key="lyro-windows-updates-v1",current="0.7.1";
+const key="lyro-windows-updates-v1",current="0.7.2";
 let options={auto:true,hours:24,last:0};
 try{const o=JSON.parse(localStorage.getItem(key)||"{}");options={auto:o.auto!==false,hours:[6,24,168].includes(o.hours)?o.hours:24,last:Number.isFinite(o.last)?o.last:0}}catch{}
 let busy=false,available=null,message="Noch nicht geprüft";

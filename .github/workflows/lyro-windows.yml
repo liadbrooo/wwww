@@ -60,12 +60,12 @@ jobs:
           New-Item -ItemType Directory -Force release
           $setup = Get-ChildItem windows/src-tauri/target/release/bundle/nsis/*-setup.exe | Select-Object -First 1
           if (!$setup) { throw "NSIS installer missing" }
-          Copy-Item $setup.FullName release/LYRO-Cut-0.7.1-Windows-x64-Setup.exe
-          Compress-Archive -Path windows/src-tauri/target/release/lyro-cut.exe -DestinationPath release/LYRO-Cut-0.7.1-Windows-x64-Portable.zip
+          Copy-Item $setup.FullName release/LYRO-Cut-0.7.2-Windows-x64-Setup.exe
+          Compress-Archive -Path windows/src-tauri/target/release/lyro-cut.exe -DestinationPath release/LYRO-Cut-0.7.2-Windows-x64-Portable.zip
           Get-ChildItem release -File | ForEach-Object { "$((Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower())  $($_.Name)" | Out-File -Encoding ascii -Append release/SHA256SUMS.txt }
       - uses: actions/upload-artifact@v4
         with:
-          name: LYRO-Cut-0.7.1-Windows-x64
+          name: LYRO-Cut-0.7.2-Windows-x64
           path: release/*
           if-no-files-found: error
   publish:
@@ -77,7 +77,7 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with:
-          name: LYRO-Cut-0.7.1-Windows-x64
+          name: LYRO-Cut-0.7.2-Windows-x64
           path: release
       - name: Verify release package and publish
         env:
@@ -85,9 +85,9 @@ jobs:
           GH_REPO: ${{ github.repository }}
         run: |
           (cd release && sha256sum -c SHA256SUMS.txt)
-          tag=lyro-cut-windows-v0.7.1
+          tag=lyro-cut-windows-v0.7.2
           if gh release view "$tag" --repo "$GH_REPO" >/dev/null 2>&1; then
             echo "Version already published; retain immutable files."
           else
-            gh release create "$tag" --repo "$GH_REPO" --target "$GITHUB_SHA" --title "LYRO Cut Windows 0.7.1" --notes "Windows Foundation with integrated SHA-256 verified updater. FFmpeg optional. Unsigned preview build." release/LYRO-Cut-0.7.1-Windows-x64-Setup.exe release/LYRO-Cut-0.7.1-Windows-x64-Portable.zip release/SHA256SUMS.txt
+            gh release create "$tag" --repo "$GH_REPO" --target "$GITHUB_SHA" --title "LYRO Cut Windows 0.7.2" --notes "Windows 0.7.2: GPU encoder probing, native export dialog, quality settings, segment progress and cancellation. FFmpeg optional. Unsigned preview build." release/LYRO-Cut-0.7.2-Windows-x64-Setup.exe release/LYRO-Cut-0.7.2-Windows-x64-Portable.zip release/SHA256SUMS.txt
           fi
