@@ -29,6 +29,21 @@ import Foundation
         precondition(stack.effectStack.count==2)
         stack.setPose(Keyframe(time:1,scale:2,x:0,y:0,rotation:0,opacity:1),at:1,fps:30)
         precondition(stack.pose(at:1).scale==2)
+        var group=Project()
+        group.addTrack(audio:false);group.addTrack(audio:true)
+        precondition(group.lanes.first==3 && group.lanes.last == -3)
+        let a=Clip(name:"A",kind:.video,start:0,length:2)
+        let b=Clip(name:"B",kind:.video,start:2,length:2)
+        group.clips=[a,b]
+        precondition(group.moveGroup(Set([a.id,b.id]),delta:1,laneDelta:1))
+        precondition(group.clips[0].start==1 && group.clips[1].start==3)
+        group.toggleTrack(1,\.lockedTracks)
+        precondition(!group.moveGroup(Set([a.id,b.id]),delta:1,laneDelta:0))
+        group.removeGroup(Set([a.id]),ripple:false)
+        precondition(group.clips.count==2)
+        group.toggleTrack(1,\.lockedTracks)
+        group.removeGroup(Set([a.id]),ripple:true)
+        precondition(group.clips.count==1 && group.clips[0].start==1)
         print("Project model tests passed")
     }
 }

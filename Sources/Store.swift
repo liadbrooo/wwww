@@ -6,7 +6,9 @@ import UniformTypeIdentifiers
 
 @MainActor final class Editor: ObservableObject {
     @Published var project = Project()
-    @Published var selected: UUID?
+    @Published var selected: UUID? {didSet {if let id=selected,!selection.contains(id){selection=[id]} else if selected==nil {selection=[]}}}
+    @Published var selection:Set<UUID> = []
+    @Published var workspace="Schnitt"
     @Published var playhead: Double = 0
     @Published var playing = false
     @Published var error: String?
@@ -49,6 +51,12 @@ import UniformTypeIdentifiers
         }
     }
     var current: Clip? { project.clips.first { $0.id == selected } }
+    func selectClip(_ id:UUID,extend:Bool=false){
+        if extend {
+            if selection.contains(id){selection.remove(id);selected=selection.first}
+            else{selection.insert(id);selected=id}
+        }else{selection=[id];selected=id}
+    }
     func record() {
         undoStack.append(project)
         if undoStack.count > 80 { undoStack.removeFirst() }
@@ -59,7 +67,7 @@ import UniformTypeIdentifiers
         record(); lastEdit = nil; work(&project); changed()
     }
     func edit(_ id: UUID,_ work: (inout Clip)->Void) {
-        guard let index = project.clips.firstIndex(where:{$0.id == id}) else { return }
+        guard let index = project.clips.firstIndex(where:{$0.id == id}), !project.locked(project.clips[index].lane) else { return }
         if lastEdit?.0 != id || Date().timeIntervalSince(lastEdit?.1 ?? .distantPast) > 0.7 { record() }
         lastEdit = (id,Date())
         work(&project.clips[index])
@@ -76,6 +84,7 @@ import UniformTypeIdentifiers
     }
     func changed() {
         if let selected = selected, !project.clips.contains(where:{$0.id == selected}) { self.selected = nil }
+        selection.formIntersection(Set(project.clips.map(\.id)))
         try? FileManager.default.createDirectory(at:recovery.deletingLastPathComponent(),withIntermediateDirectories:true)
         if let data = try? JSONEncoder().encode(project) {
             try? data.write(to:recovery,options:.atomic)
@@ -170,7 +179,8 @@ import UniformTypeIdentifiers
         }
     }
     func add(_ media: Media, at position: Double? = nil, lane requested: Int? = nil) {
-        let lane = media.kind == .audio ? max(-2,min(-1,requested ?? -1)) : max(0,min(2,requested ?? 0))
+        let lane = media.kind == .audio ? max(project.lanes.last ?? -2,min(-1,requested ?? -1)) : max(0,min(project.lanes.first ?? 2,requested ?? 0))
+        guard !project.locked(lane) else{status="Spur ist gesperrt";return}
         let start = position.map{max(0,project.snap($0))} ?? project.clips.filter{$0.lane == lane}.map(\.end).max() ?? 0
         let clip = Clip(mediaID:media.id,name:media.name,kind:media.kind,start:start,length:media.duration,lane:lane)
         change { p in
@@ -187,37 +197,51 @@ import UniformTypeIdentifiers
         }; selected = clip.id
     }
     func addTitle() {
+        guard !project.locked(2) else{status="Spur ist gesperrt";return}
         let clip = Clip(name:"Titel",kind:.title,start:playhead,length:3,lane:2)
         change { $0.clips.append(clip) }; selected = clip.id
     }
     func split() {
+        if selection.count>1 {
+            var p=project
+            let rights=selection.compactMap{p.split($0,at:p.snap(playhead))}
+            if !rights.isEmpty {change{$0=p};selection=Set(rights);selected=rights.first}
+            return
+        }
         guard let id = selected ?? project.clips.first(where:{$0.start < playhead && $0.end > playhead && $0.kind == .video})?.id else { return }
         var next = project
-        guard let right = next.split(id,at:playhead) else { return }
+        guard let right = next.split(id,at:next.snap(playhead)) else { return }
         change { $0 = next }; selected = right
     }
     func duplicate() {
-        guard var c = current else { return }
+        guard var c = current,!project.locked(c.lane) else { return }
         c.id = UUID(); c.start = c.end
-        change { $0.clips.append(c) }; selected = c.id
-    }
-    func remove(ripple: Bool = false) {
-        guard let c = current else { return }
         change { p in
-            p.clips.removeAll{$0.id == c.id}
-            if ripple {
-                for i in p.clips.indices where p.clips[i].lane == c.lane && p.clips[i].start >= c.end-0.001 { p.clips[i].start -= c.length }
-            }
-        }
+            for i in p.clips.indices where p.clips[i].lane==c.lane && p.clips[i].start>=c.start-0.00001 {p.clips[i].start+=c.length}
+            p.clips.append(c)
+        }; selectClip(c.id)
+    }
+    func remove(ripple:Bool=false){
+        let ids=selection.isEmpty ? Set([selected].compactMap{$0}):selection
+        guard !ids.isEmpty else{return}
+        change{$0.removeGroup(ids,ripple:ripple)}
+        selection=[];selected=nil
     }
     func move(_ id: UUID,to time: Double,lane: Int) {
-        guard let c = project.clips.first(where:{$0.id == id}) else { return }
+        guard let c = project.clips.first(where:{$0.id == id}), !project.locked(c.lane) else { return }
         var destination = max(0,time)
-        let edges: [Double] = project.clips.filter{$0.id != id}.flatMap{ (clip: Clip) -> [Double] in [clip.start,clip.end] } + [playhead,0.0]
+        let edges: [Double] = project.clips.filter{$0.id != id && !selection.contains($0.id)}.flatMap{ (clip: Clip) -> [Double] in [clip.start,clip.end] } + [playhead,0.0]
         let candidates=edges.flatMap{[$0,$0-c.length]}.filter{$0>=0}
         if snapping,let edge = candidates.min(by:{abs($0-destination)<abs($1-destination)}), abs(edge-destination) < 8/zoom { destination = edge }
         else { destination = project.snap(destination) }
-        let targetLane=c.kind == .audio ? max(-2,min(-1,lane)) : max(0,min(2,lane))
+        let targetLane=c.kind == .audio ? max(project.lanes.last ?? -2,min(-1,lane)) : max(0,min(project.lanes.first ?? 2,lane))
+        guard !project.locked(targetLane) else{status="Spur ist gesperrt";return}
+        if selection.contains(id),selection.count>1 {
+            var next=project
+            if next.moveGroup(selection,delta:destination-c.start,laneDelta:targetLane-c.lane){change{$0=next}}
+            else{status="Gruppenverschiebung blockiert: Spur oder Clip belegt"}
+            return
+        }
         let swap=project.clips.first{$0.id != id && $0.lane == targetLane && destination+c.length/2 >= $0.start && destination+c.length/2 < $0.end}
         change { p in
             if let i=p.clips.firstIndex(where:{$0.id==id}) {
@@ -230,7 +254,10 @@ import UniformTypeIdentifiers
                     for k in p.clips.indices where k != i && k != j && p.clips[k].lane==targetLane && p.clips[k].start>left && p.clips[k].start<right {
                         p.clips[k].start=max(0,p.clips[k].start+(c.start<other.start ? other.length-c.length:c.length-other.length))
                     }
-                } else {p.clips[i].start=destination;p.clips[i].lane=targetLane}
+                } else {
+                    guard !p.clips.contains(where:{$0.id != id && $0.lane==targetLane && $0.start<destination+c.length-0.00001 && $0.end>destination+0.00001}) else{return}
+                    p.clips[i].start=destination;p.clips[i].lane=targetLane
+                }
             }
         }
     }
@@ -305,7 +332,7 @@ import UniformTypeIdentifiers
         }
         guard let url = fileURL else { return }
         do {
-            var data = project; data.name = url.deletingPathExtension().lastPathComponent
+            var data = project; data.schemaVersion=1; data.name = url.deletingPathExtension().lastPathComponent
             try JSONEncoder().encode(data).write(to:url,options:.atomic)
             project.name = data.name; changed(); status = "Gespeichert"
         } catch { self.error = error.localizedDescription }
@@ -314,9 +341,17 @@ import UniformTypeIdentifiers
         let panel = NSOpenPanel(); panel.allowedContentTypes = [UTType(filenameExtension:"lyrocut") ?? .json]
         guard panel.runModal() == .OK,let url = panel.url else { return }
         do {
-            let next = try JSONDecoder().decode(Project.self,from:Data(contentsOf:url))
+            var next = try JSONDecoder().decode(Project.self,from:Data(contentsOf:url))
+            guard (next.schemaVersion ?? 1)==1 else{throw RenderError.invalid("Projektversion")}
+            for i in next.media.indices where !FileManager.default.fileExists(atPath:next.media[i].path) {
+                let relink=NSOpenPanel();relink.message="Quelldatei erneut auswählen: "+next.media[i].name
+                relink.allowedContentTypes=[.movie,.video,.audio];relink.allowsMultipleSelection=false
+                guard relink.runModal()==.OK,let file=relink.url else{return}
+                guard file.lastPathComponent==next.media[i].name else{throw RenderError.invalid("Dateiname stimmt nicht überein")}
+                next.media[i].path=file.path
+            }
             guard next.fps >= 10 && next.fps <= 120, next.frameRate >= 10 && next.frameRate <= 120,
-                  next.clips.allSatisfy({$0.start.isFinite && $0.start >= 0 && $0.length.isFinite && $0.length > 0 && $0.speed > 0 && $0.sourceIn >= 0 && (-2...2).contains($0.lane)}) else { throw RenderError.invalid("Projektdatei") }
+                  next.clips.allSatisfy({$0.start.isFinite && $0.start >= 0 && $0.length.isFinite && $0.length > 0 && $0.speed > 0 && $0.sourceIn >= 0 && (-12...11).contains($0.lane)}) else { throw RenderError.invalid("Projektdatei") }
             player.pause(); seek(0); fileURL = url; change { $0 = next }
             Task { await makeThumbnails() }
         } catch { self.error = error.localizedDescription }

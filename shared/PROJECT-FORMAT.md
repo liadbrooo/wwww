@@ -1,0 +1,6 @@
+# LYRO Cut project interchange v1
+
+The canonical JSON is the Swift Project Codable representation: schemaVersion=1, name, canvas (16:9/9:16/1:1), fps (integer), optional sourceFPS/sourceCanvasWidth/sourceCanvasHeight, ultraHD, media, clips, optional videoTrackCount/audioTrackCount (3–12/2–12), lockedTracks/mutedTracks/hiddenTracks, markers.
+Media records: UUID id, path (empty for browser), name, duration, kind video/audio, optional width/height/fps. Source files are not embedded; relink locally.
+Clips: UUID id, optional mediaID, name, kind video/audio/title, start, sourceIn, length, speed, lane, volume, opacity, scale, x/y (fraction of full canvas), rotation (degrees, CCW), brightness (offset from neutral), contrast, saturation, look, motion, fadeIn/fadeOut, title, fontSize, optional fill/mask/maskSize/keyframes/effects/audio fades etc. Keyframes: UUID id, time (clip-relative seconds), scale,x,y,rotation,opacity,ease. Lane indices -12...11, nonnegative visual, negative audio. Markers: id/time/name.
+Browser importer rejects unsupported native operations instead of dropping them; browser-only images/demo cannot be exported to native interchange. Legacy formats remain readable on their own platform. Rendering differences between engines are possible.

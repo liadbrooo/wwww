@@ -170,7 +170,7 @@ enum Renderer {
         var hasVideo = false
         for c in project.clips.sorted(by:{ $0.lane == $1.lane ? $0.start < $1.start : $0.lane < $1.lane }) {
             if c.kind == .title {
-                layers.append(Layer(clip:c,track:nil,transform:.identity,title:titleImage(c)))
+                if !project.hidden(c.lane){layers.append(Layer(clip:c,track:nil,transform:.identity,title:titleImage(c)))}
                 continue
             }
             guard let media = project.asset(c), FileManager.default.fileExists(atPath:media.path) else { throw RenderError.missing(c.name) }
@@ -185,10 +185,10 @@ enum Renderer {
                 try track.insertTimeRange(range,of:source,at:at)
                 track.scaleTimeRange(CMTimeRange(start:at,duration:range.duration),toDuration:ct(c.length))
                 let transform = try await source.load(.preferredTransform)
-                layers.append(Layer(clip:c,track:track.trackID,transform:transform,title:nil))
+                if !project.hidden(c.lane){layers.append(Layer(clip:c,track:track.trackID,transform:transform,title:nil))}
                 hasVideo = true
             }
-            if let source = try await asset.loadTracks(withMediaType:.audio).first,
+            if !project.muted(c.lane),let source = try await asset.loadTracks(withMediaType:.audio).first,
                let track = comp.addMutableTrack(withMediaType:.audio,preferredTrackID:kCMPersistentTrackID_Invalid) {
                 let sourceRange = try await source.load(.timeRange)
                 let intersection = CMTimeRangeGetIntersection(range,otherRange:sourceRange)

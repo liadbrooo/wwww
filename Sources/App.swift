@@ -79,6 +79,13 @@ struct Workspace: View {
         VStack(spacing:0) {
             header
             Divider()
+            HStack(spacing:4){
+                ForEach(["Medien","Schnitt","Motion","Farbe","Audio"],id:\.self){mode in
+                    Button(mode){e.workspace=mode;library=mode=="Medien" || mode=="Schnitt";inspector=mode != "Medien"}
+                        .buttonStyle(.plain).padding(.horizontal,16).padding(.vertical,7)
+                        .background(e.workspace==mode ? Color.white.opacity(0.1):Color.clear,in:RoundedRectangle(cornerRadius:5))
+                }
+            }.frame(maxWidth:.infinity).padding(5).background(panel)
             VSplitView {
                 HSplitView {
                     if library { MediaLibrary(e:e).frame(minWidth:185,idealWidth:245,maxWidth:360) }
@@ -96,7 +103,7 @@ struct Workspace: View {
                 }
                 Spacer()
                 Text("LOKAL  ·  " + e.project.canvas.rawValue + "  ·  " + String(e.project.fps) + " FPS")
-                Text("v0.3.0").foregroundStyle(.tertiary)
+                Text("v0.4.0").foregroundStyle(.tertiary)
             }.font(.system(size:11,weight:.medium)).foregroundStyle(.secondary).padding(.horizontal,14).frame(height:27).background(panel)
         }.background(bg)
         .tint(accent)
@@ -237,6 +244,9 @@ struct Inspector: View {
             Text("Eigenschaften").font(.system(size:13,weight:.semibold))
             panelContent()
         }.padding(13).background(panel)
+        .onChange(of:e.workspace){_,mode in
+            tab=["Motion":"Motion","Farbe":"Farbe","Audio":"Audio"][mode] ?? "Video"
+        }
     }
     func panelContent() -> AnyView {
         if let c=e.current {return AnyView(clipPanel(c))}
@@ -370,7 +380,7 @@ struct Inspector: View {
 }
 struct Timeline: View {
     @ObservedObject var e: Editor
-    let lanes = [2,1,0,-1,-2]
+    var lanes:[Int]{e.project.lanes}
     let rowHeight: CGFloat = 47
     var width: CGFloat {max(600,(e.project.duration+6)*e.zoom)}
     var body: some View {
@@ -383,6 +393,7 @@ struct Timeline: View {
                 Tool(symbol:"arrow.left.to.line",help:"Löschen & Lücke schließen",enabled:e.current != nil){e.remove(ripple:true)}
                 Divider().frame(height:19)
                 Tool(symbol:"textformat",help:"Titel"){e.addTitle()}
+                Menu {Button("Videospur hinzufügen"){e.change{$0.addTrack(audio:false)}};Button("Audiospur hinzufügen"){e.change{$0.addTrack(audio:true)}};Button("Marker setzen"){e.change{$0.markers=($0.markers ?? [])+[TimelineMarker(time:e.playhead,name:"Marker")]}};Button("Marker löschen"){e.change{$0.markers=[]}}} label:{Image(systemName:"plus")}.menuStyle(.borderlessButton).frame(width:32)
                 Spacer()
                 Toggle("Magnet",isOn:$e.snapping).toggleStyle(.button).help("Magnetisches Einrasten")
                 Toggle("Tauschen",isOn:$e.swapping).toggleStyle(.button).help("Clips beim Verschieben tauschen")
@@ -390,17 +401,15 @@ struct Timeline: View {
                 Slider(value:$e.zoom,in:12...160).frame(width:100)
                 Image(systemName:"plus.magnifyingglass").foregroundStyle(.secondary)
             }.padding(.horizontal,12).frame(height:42).background(panel)
+            ScrollView(.vertical){
             HStack(alignment:.top,spacing:0) {
                 VStack(spacing:0) {
-                    Text("SPUREN").font(.system(size:9,weight:.semibold)).foregroundStyle(.secondary).frame(width:80,height:26)
+                    Text("SPUREN").font(.system(size:9,weight:.semibold)).foregroundStyle(.secondary).frame(width:128,height:26)
                     ForEach(lanes,id:\.self){lane in
-                        HStack(spacing:7){
-                            Image(systemName:lane<0 ? "waveform" : lane==2 ? "textformat" : "film")
-                            Text(lane<0 ? "A\(-lane)" : lane==2 ? "T1" : "V\(lane+1)").fontWeight(.semibold)
-                        }.foregroundStyle(laneColor(lane)).font(.system(size:11)).frame(width:80,height:rowHeight).overlay(alignment:.bottom){Divider()}
+                        TrackHeader(e:e,lane:lane,height:rowHeight)
                     }
                 }.background(panel)
-                ScrollView([.horizontal,.vertical]) {
+                ScrollView(.horizontal) {
                     VStack(alignment:.leading,spacing:0) {
                         ZStack(alignment:.topLeading) {
                             Rectangle().fill(panel)
@@ -411,6 +420,10 @@ struct Timeline: View {
                                         Rectangle().fill(Color.white.opacity(0.25)).frame(width:1,height:5)
                                     }.offset(x:CGFloat(second)*e.zoom+3,y:3)
                                 }
+                            }
+                            ForEach(e.project.markers ?? []){marker in
+                                Button {e.seek(marker.time)} label:{Image(systemName:"bookmark.fill").foregroundStyle(Color.orange).font(.system(size:10))}
+                                    .buttonStyle(.plain).offset(x:marker.time*e.zoom,y:11)
                             }
                         }.frame(width:width,height:26).contentShape(Rectangle())
                          .gesture(DragGesture(minimumDistance:0).onChanged{e.seek(Double($0.location.x)/e.zoom)})
@@ -423,19 +436,20 @@ struct Timeline: View {
                                 }
                             }
                             ForEach(0...Int(width/e.zoom),id:\.self){second in
-                                if second%5==0 {Rectangle().fill(edge).frame(width:1,height:rowHeight*5).offset(x:CGFloat(second)*e.zoom).allowsHitTesting(false)}
+                                if second%5==0 {Rectangle().fill(edge).frame(width:1,height:rowHeight*CGFloat(lanes.count)).offset(x:CGFloat(second)*e.zoom).allowsHitTesting(false)}
                             }
                             ForEach(e.project.clips){c in
                                 if let row=lanes.firstIndex(of:c.lane) {
                                     ClipTile(e:e,c:c,row:row,rowHeight:rowHeight)
                                 }
                             }
-                            Rectangle().fill(accent).frame(width:1.5,height:rowHeight*5).offset(x:e.playhead*e.zoom).allowsHitTesting(false)
-                        }.frame(width:width,height:rowHeight*5,alignment:.topLeading).onDrop(of:[UTType.text.identifier],delegate:MediaDrop(e:e,lanes:lanes,rowHeight:rowHeight))
+                            Rectangle().fill(accent).frame(width:1.5,height:rowHeight*CGFloat(lanes.count)).offset(x:e.playhead*e.zoom).allowsHitTesting(false)
+                        }.frame(width:width,height:rowHeight*CGFloat(lanes.count),alignment:.topLeading).onDrop(of:[UTType.text.identifier],delegate:MediaDrop(e:e,lanes:lanes,rowHeight:rowHeight))
                     }.overlay(alignment:.topLeading){
                         Image(systemName:"triangle.fill").rotationEffect(.degrees(180)).font(.system(size:9)).foregroundStyle(accent).offset(x:e.playhead*e.zoom-4,y:20).allowsHitTesting(false)
                     }
                 }
+            }
             }
             Spacer(minLength:0)
         }.background(bg)
@@ -456,22 +470,23 @@ struct ClipTile: View {
             if w>38 {Text(c.kind == .title ? c.title:c.name).font(.system(size:10,weight:.semibold)).lineLimit(1)}
             Spacer(minLength:0)
         }.padding(.horizontal,5).frame(width:w,height:rowHeight-7).clipped()
-        .background(laneColor(c.lane).opacity(e.selected==c.id ? 0.83:0.49),in:RoundedRectangle(cornerRadius:4))
+        .background(laneColor(c.lane).opacity(e.selection.contains(c.id) ? 0.83:0.49),in:RoundedRectangle(cornerRadius:4))
         .overlay(alignment:.bottom) {
             if let id=c.mediaID,let peaks=e.waveforms[id],!peaks.isEmpty {
                 WaveformStrip(peaks:peaks,sourceIn:c.sourceIn,sourceLength:c.length*c.speed,mediaDuration:e.project.asset(c)?.duration ?? c.length)
                     .frame(height:c.kind == .audio ? rowHeight-10 : 12).padding(.horizontal,4).allowsHitTesting(false)
             }
         }
-        .overlay(RoundedRectangle(cornerRadius:4).strokeBorder(e.selected==c.id ? Color.white:laneColor(c.lane),lineWidth:e.selected==c.id ? 1.5:0.7))
-        .onTapGesture{e.selected=c.id}
+        .overlay(RoundedRectangle(cornerRadius:4).strokeBorder(e.selection.contains(c.id) ? Color.white:laneColor(c.lane),lineWidth:e.selection.contains(c.id) ? 1.5:0.7))
+        .onTapGesture{e.selectClip(c.id,extend:NSEvent.modifierFlags.contains(.command) || NSEvent.modifierFlags.contains(.shift))}
         .gesture(DragGesture(minimumDistance:4).updating($drag){value,state,_ in state=value.translation}.onEnded{value in
-            e.selected=c.id
-            e.move(c.id,to:c.start+Double(value.translation.width)/e.zoom,lane:max(-2,min(2,c.lane-Int((value.translation.height/rowHeight).rounded()))))
+            if !e.selection.contains(c.id){e.selectClip(c.id)}
+            e.move(c.id,to:c.start+Double(value.translation.width)/e.zoom,lane:c.lane-Int((value.translation.height/rowHeight).rounded()))
         })
         .overlay(alignment:.leading) { trimHandle(leading:true) }
         .overlay(alignment:.trailing) { trimHandle(leading:false) }
         .offset(x:c.start*e.zoom+drag.width,y:CGFloat(row)*rowHeight+3+drag.height)
+        .opacity(e.project.hidden(c.lane) || e.project.locked(c.lane) ? 0.5:1)
         .contextMenu {
             Button("Teilen"){e.selected=c.id;e.split()}
             Button("Duplizieren"){e.selected=c.id;e.duplicate()}
@@ -480,7 +495,7 @@ struct ClipTile: View {
         }
     }
     func trimHandle(leading:Bool)->some View {
-        Rectangle().fill(e.selected==c.id ? Color.white.opacity(0.85):Color.white.opacity(0.18))
+        Rectangle().fill(e.selection.contains(c.id) ? Color.white.opacity(0.85):Color.white.opacity(0.18))
             .frame(width:5,height:rowHeight-12)
             .contentShape(Rectangle().inset(by:-3))
             .highPriorityGesture(DragGesture(minimumDistance:2).onEnded{v in

@@ -25,3 +25,6 @@ Waveforms are calculated from decoded audio locally; scene suggestions use sampl
 
 ## 0.3.0
 Native vector recreation of the new glass L / timeline identity and redesigned DMG. Export panel (MP4/MOV/ProRes, resolution, FPS, progress and cancellation), stacked effects, editable mask placement and aspect, audio fades, corrected fractional FPS snapping, source format restoration, keyframe-aware transform editing and insertion/swap improvements. Existing projects remain decodable. UHD export is checked with a real exported file in CI. UI interaction and ProRes still need manual testing. No speech recognition or object tracking yet.
+
+## 0.4.0 Studio Foundation
+Dynamic video/audio tracks, track locks/mute/visibility, group selection/move/delete/split, markers, workspace switcher and shared .lyrocut JSON schema v1. Cross-platform projects reference local source files; relink by file name. Browser compatibility covers a subset of native effects and media types.\n

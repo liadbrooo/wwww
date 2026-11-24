@@ -110,6 +110,11 @@ struct Clip: Identifiable, Codable, Equatable {
         return Keyframe(time:time,scale:lerp(a.scale,b.scale),x:lerp(a.x,b.x),y:lerp(a.y,b.y),rotation:lerp(a.rotation,b.rotation),opacity:lerp(a.opacity,b.opacity))
     }
 }
+struct TimelineMarker:Identifiable,Codable,Equatable {
+    var id=UUID()
+    var time:Double
+    var name:String
+}
 struct Project: Codable, Equatable {
     var name = "Unbenannt"
     var canvas: Canvas = .landscape
@@ -139,6 +144,58 @@ struct Project: Codable, Equatable {
     }
     mutating func setCanvas(_ value:Canvas) {canvas=value;sourceCanvasWidth=nil;sourceCanvasHeight=nil}
     mutating func setFPS(_ value:Int) {fps=value;sourceFPS=nil}
+    var schemaVersion: Int? = nil
+    var videoTrackCount: Int? = nil
+    var audioTrackCount: Int? = nil
+    var lockedTracks: [Int]? = nil
+    var mutedTracks: [Int]? = nil
+    var hiddenTracks: [Int]? = nil
+    var markers: [TimelineMarker]? = nil
+    var lanes: [Int] {
+        let v=min(12,max(3,videoTrackCount ?? 3,(clips.map(\.lane).max() ?? 0)+1))
+        let a=min(12,max(2,audioTrackCount ?? 2,-(clips.map(\.lane).min() ?? 0)))
+        return Array((-a...v-1).reversed())
+    }
+    func locked(_ lane:Int)->Bool{lockedTracks?.contains(lane) ?? false}
+    func muted(_ lane:Int)->Bool{mutedTracks?.contains(lane) ?? false}
+    func hidden(_ lane:Int)->Bool{hiddenTracks?.contains(lane) ?? false}
+    mutating func toggleTrack(_ lane:Int,_ key:WritableKeyPath<Project,[Int]?>){
+        var items=self[keyPath:key] ?? []
+        if items.contains(lane){items.removeAll{$0==lane}}else{items.append(lane)}
+        self[keyPath:key]=items
+    }
+    mutating func addTrack(audio:Bool){
+        if audio {audioTrackCount=min(12,abs(lanes.last ?? -2)+1)}
+        else {videoTrackCount=min(12,(lanes.first ?? 2)+2)}
+    }
+    mutating func moveGroup(_ ids:Set<UUID>,delta:Double,laneDelta:Int)->Bool{
+        let moving=clips.filter{ids.contains($0.id)}
+        guard !moving.isEmpty else{return false}
+        let minimum=moving.map(\.start).min() ?? 0
+        let shift=max(-minimum,delta)
+        for c in moving {
+            let lane=c.lane+laneDelta
+            guard lanes.contains(lane),!locked(c.lane),!locked(lane),(c.kind == .audio ? lane<0:lane>=0) else{return false}
+            let start=c.start+shift
+            guard !clips.contains(where:{!ids.contains($0.id) && $0.lane==lane && $0.start<start+c.length-0.00001 && $0.end>start+0.00001}) else{return false}
+        }
+        for i in clips.indices where ids.contains(clips[i].id){clips[i].start+=shift;clips[i].lane+=laneDelta}
+        return true
+    }
+    mutating func removeGroup(_ ids:Set<UUID>,ripple:Bool){
+        let removing=clips.filter{ids.contains($0.id) && !locked($0.lane)}
+        let actual=Set(removing.map(\.id))
+        clips.removeAll{actual.contains($0.id)}
+        if ripple {
+            for i in clips.indices {
+                let c=clips[i]
+                let ranges=removing.filter{$0.lane==c.lane && $0.end<=c.start+0.00001}.sorted{$0.start<$1.start}
+                var total=0.0, end = -Double.infinity
+                for x in ranges {total+=max(0,x.end-max(end,x.start));end=max(end,x.end)}
+                clips[i].start=max(0,c.start-total)
+            }
+        }
+    }
     var media: [Media] = []
     var clips: [Clip] = []
     var duration: Double { clips.map(\.end).max() ?? 0 }
@@ -146,6 +203,7 @@ struct Project: Codable, Equatable {
     mutating func split(_ id: UUID, at time: Double) -> UUID? {
         guard let index = clips.firstIndex(where: {$0.id == id}) else { return nil }
         var right = clips[index]
+        guard !locked(right.lane) else{return nil}
         let offset = time - right.start
         let minimum=0.5/frameRate
         guard offset > minimum, offset < right.length - minimum else { return nil }
