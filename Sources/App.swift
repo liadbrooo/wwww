@@ -103,7 +103,7 @@ struct Workspace: View {
                 }
                 Spacer()
                 Text("LOKAL  ·  " + e.project.canvas.rawValue + "  ·  " + String(e.project.fps) + " FPS")
-                Text("v0.4.0").foregroundStyle(.tertiary)
+                Text("v0.5.0").foregroundStyle(.tertiary)
             }.font(.system(size:11,weight:.medium)).foregroundStyle(.secondary).padding(.horizontal,14).frame(height:27).background(panel)
         }.background(bg)
         .tint(accent)
@@ -393,6 +393,7 @@ struct Timeline: View {
                 Tool(symbol:"arrow.left.to.line",help:"Löschen & Lücke schließen",enabled:e.current != nil){e.remove(ripple:true)}
                 Divider().frame(height:19)
                 Tool(symbol:"textformat",help:"Titel"){e.addTitle()}
+                ProfessionalTools(e:e)
                 Menu {Button("Videospur hinzufügen"){e.change{$0.addTrack(audio:false)}};Button("Audiospur hinzufügen"){e.change{$0.addTrack(audio:true)}};Button("Marker setzen"){e.change{$0.markers=($0.markers ?? [])+[TimelineMarker(time:e.playhead,name:"Marker")]}};Button("Marker löschen"){e.change{$0.markers=[]}}} label:{Image(systemName:"plus")}.menuStyle(.borderlessButton).frame(width:32)
                 Spacer()
                 Toggle("Magnet",isOn:$e.snapping).toggleStyle(.button).help("Magnetisches Einrasten")

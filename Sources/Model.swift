@@ -110,6 +110,7 @@ struct Clip: Identifiable, Codable, Equatable {
         return Keyframe(time:time,scale:lerp(a.scale,b.scale),x:lerp(a.x,b.x),y:lerp(a.y,b.y),rotation:lerp(a.rotation,b.rotation),opacity:lerp(a.opacity,b.opacity))
     }
 }
+enum EditMode:String,CaseIterable {case ripple,roll,slip,slide}
 struct TimelineMarker:Identifiable,Codable,Equatable {
     var id=UUID()
     var time:Double
@@ -199,6 +200,64 @@ struct Project: Codable, Equatable {
     var media: [Media] = []
     var clips: [Clip] = []
     var duration: Double { clips.map(\.end).max() ?? 0 }
+    // Professional operations are atomic: reject a change when any source handle or neighbor is invalid.
+    mutating func professionalEdit(_ id:UUID,mode:EditMode,frames:Int)->Bool {
+        guard let i=clips.firstIndex(where:{$0.id==id}),frames != 0 else{return false}
+        let c=clips[i], d=Double(frames)/frameRate, epsilon=0.00001, minimum=1/frameRate
+        guard !locked(c.lane) else{return false}
+        let same=clips.indices.filter{$0 != i && clips[$0].lane==c.lane}
+        // Operations require a non-overlapping lane; transitions are edited separately.
+        guard !same.contains(where:{clips[$0].start<c.end-epsilon && clips[$0].end>c.start+epsilon}) else{return false}
+        let previous=same.filter{abs(clips[$0].end-c.start)<epsilon}.max(by:{clips[$0].start<clips[$1].start})
+        let next=same.filter{abs(clips[$0].start-c.end)<epsilon}.min(by:{clips[$0].start<clips[$1].start})
+        func valid(_ x:Clip)->Bool {
+            guard x.start>=(-epsilon),x.length>=minimum-epsilon,x.sourceIn>=(-epsilon) else{return false}
+            if let asset=asset(x){return x.sourceIn+x.length*x.speed<=asset.duration+epsilon}
+            return x.kind == .title
+        }
+        func adjusted(_ original:Clip,head:Double=0,tail:Double=0)->Clip {
+            var x=original
+            x.start+=head;x.sourceIn+=head*x.speed;x.length+=tail-head
+            if x.kind == .title {x.sourceIn=0}
+            if let keys=original.keyframes,!keys.isEmpty {
+                var first=original.pose(at:head);first.id=UUID();first.time=0
+                var last=original.pose(at:head+x.length);last.id=UUID();last.time=x.length
+                x.keyframes=[first]+keys.filter{$0.time>head && $0.time<head+x.length}.map{key in var k=key;k.time-=head;return k}+[last]
+            }
+            x.fadeIn=min(x.fadeIn,max(0,x.length/2));x.fadeOut=min(x.fadeOut,max(0,x.length/2))
+            return x
+        }
+        var changes:[Int:Clip]=[:]
+        switch mode {
+        case .ripple:
+            changes[i]=adjusted(c,tail:d)
+            for j in same where clips[j].start>=c.end-epsilon {var x=clips[j];x.start+=d;changes[j]=x}
+        case .roll:
+            guard let j=next else{return false}
+            changes[i]=adjusted(c,tail:d);changes[j]=adjusted(clips[j],head:d)
+        case .slip:
+            guard c.kind != .title else{return false}
+            var x=c;x.sourceIn+=d*x.speed;changes[i]=x
+        case .slide:
+            guard let p=previous,let n=next else{return false}
+            var x=c;x.start+=d
+            changes[p]=adjusted(clips[p],tail:d);changes[i]=x;changes[n]=adjusted(clips[n],head:d)
+        }
+        guard changes.values.allSatisfy(valid) else{return false}
+        for (j,x) in changes {clips[j]=x}
+        return true
+    }
+    mutating func dissolveInto(_ id:UUID,seconds:Double)->Bool {
+        guard let i=clips.firstIndex(where:{$0.id==id}) else{return false}
+        let c=clips[i], d=snap(seconds)
+        guard c.kind == .video,!locked(c.lane),d>=1/frameRate,d<c.length/2 else{return false}
+        guard let j=clips.indices.first(where:{$0 != i && clips[$0].lane==c.lane && clips[$0].kind == .video && abs(clips[$0].end-c.start)<0.00001}),d<clips[j].length/2 else{return false}
+        guard !clips.indices.contains(where:{$0 != i && $0 != j && clips[$0].lane==c.lane && clips[$0].start<c.end-0.00001 && clips[$0].end>c.start-d+0.00001}) else{return false}
+        clips[i].start-=d;clips[i].fadeIn=d;clips[i].audioFadeIn=d;clips[j].audioFadeOut=d
+        // Move following same-lane clips as a unit to keep the sequence contiguous.
+        for k in clips.indices where k != i && k != j && clips[k].lane==c.lane && clips[k].start>=c.end-0.00001 {clips[k].start-=d}
+        return true
+    }
     func asset(_ clip: Clip) -> Media? { media.first { $0.id == clip.mediaID } }
     mutating func split(_ id: UUID, at time: Double) -> UUID? {
         guard let index = clips.firstIndex(where: {$0.id == id}) else { return nil }

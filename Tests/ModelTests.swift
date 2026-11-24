@@ -44,6 +44,23 @@ import Foundation
         group.toggleTrack(1,\.lockedTracks)
         group.removeGroup(Set([a.id]),ripple:true)
         precondition(group.clips.count==1 && group.clips[0].start==1)
+        let source=Media(path:"fixture",name:"Source",duration:30,kind:.video)
+        let left=Clip(mediaID:source.id,name:"L",kind:.video,start:0,sourceIn:2,length:4)
+        let center=Clip(mediaID:source.id,name:"C",kind:.video,start:4,sourceIn:3,length:4)
+        let rightClip=Clip(mediaID:source.id,name:"R",kind:.video,start:8,sourceIn:4,length:4)
+        var professional=Project();professional.media=[source];professional.clips=[left,center,rightClip]
+        precondition(professional.professionalEdit(center.id,mode:.slip,frames:30))
+        precondition(professional.clips[1].sourceIn==4 && professional.clips[1].start==4)
+        precondition(professional.professionalEdit(center.id,mode:.roll,frames:30))
+        precondition(professional.clips[1].length==5 && professional.clips[2].start==9 && professional.duration==12)
+        precondition(professional.professionalEdit(center.id,mode:.slide,frames:-30))
+        precondition(professional.clips[1].start==3 && professional.clips[1].length==5 && professional.duration==12)
+        precondition(professional.professionalEdit(center.id,mode:.ripple,frames:-30))
+        precondition(professional.duration==11)
+        let before=professional
+        precondition(!professional.professionalEdit(center.id,mode:.slip,frames:3000) && professional==before)
+        precondition(professional.dissolveInto(center.id,seconds:0.5))
+        precondition(professional.clips[1].fadeIn==0.5 && professional.duration==10.5)
         print("Project model tests passed")
     }
 }

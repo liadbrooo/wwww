@@ -68,5 +68,5 @@ render(760,440,root+"/background.png"){c in
     c.setStrokeColor(col(0.65,0.98,1));c.setLineWidth(3);c.setLineCap(.round)
     c.move(to:CGPoint(x:478,y:240));c.addLine(to:CGPoint(x:535,y:240));c.move(to:CGPoint(x:522,y:253));c.addLine(to:CGPoint(x:535,y:240));c.addLine(to:CGPoint(x:522,y:227));c.strokePath()
     text(c,"Ziehe die App in den Programme-Ordner.",43,42,13,.medium,.white)
-    text(c,"VERSION 0.4.0  /  UNIVERSAL",43,21,10,.medium,NSColor(white:0.7,alpha:1))
+    text(c,"VERSION 0.5.0  /  UNIVERSAL",43,21,10,.medium,NSColor(white:0.7,alpha:1))
 }

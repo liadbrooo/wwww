@@ -261,6 +261,18 @@ import UniformTypeIdentifiers
             }
         }
     }
+    func professionalEdit(_ mode:EditMode,frames:Int) {
+        guard let id=selected else{return}
+        var next=project
+        if next.professionalEdit(id,mode:mode,frames:frames){change{$0=next}}
+        else{status="Schnitt nicht möglich: Nachbarclip, Quellreserve oder Spur prüfen"}
+    }
+    func crossDissolve(_ seconds:Double){
+        guard let id=selected else{return}
+        var next=project
+        if next.dissolveInto(id,seconds:seconds){change{$0=next}}
+        else{status="Überblendung benötigt zwei angrenzende Videoclips auf freier Spur"}
+    }
     func trim(_ c: Clip, delta: Double, leading: Bool) {
         let frame=1/project.frameRate
         let amount=(delta/frame).rounded()*frame
@@ -346,7 +358,7 @@ import UniformTypeIdentifiers
             for i in next.media.indices where !FileManager.default.fileExists(atPath:next.media[i].path) {
                 let relink=NSOpenPanel();relink.message="Quelldatei erneut auswählen: "+next.media[i].name
                 relink.allowedContentTypes=[.movie,.video,.audio];relink.allowsMultipleSelection=false
-                guard relink.runModal()==.OK,let file=relink.url else{return}
+                guard relink.runModal() == .OK,let file=relink.url else{return}
                 guard file.lastPathComponent==next.media[i].name else{throw RenderError.invalid("Dateiname stimmt nicht überein")}
                 next.media[i].path=file.path
             }
